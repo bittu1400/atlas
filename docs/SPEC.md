@@ -264,6 +264,17 @@ common licenses; it is not legal advice.*
 Attribution is rendered into the video end card *and* the description text. A Render missing required
 attribution fails the deterministic check.
 
+### 10.2 Disclosure and content guardrails
+
+- **Synthetic content disclosure.** Any Render containing AI-generated imagery is flagged in its
+  publishing metadata so the platform's synthetic-content disclosure is set at upload. Recorded per
+  Render, derived from Asset provenance rather than from operator memory.
+- **No advice.** Atlas states what sources say about human behaviour; it never issues medical,
+  psychological, financial, or legal advice or instruction. Enforced as a judge-scored check at the
+  quality gate, and relevant primarily to the HUMANS channel, which is deferred.
+- **Living persons.** Claims about identifiable living people require `primary` or `peer_reviewed` tier
+  support. Reputational assertions from `reference` or `unvetted` tiers are dropped, not softened.
+
 ---
 
 ## 11. Provider ladder and quota
@@ -390,8 +401,8 @@ Each phase ends with acceptance criteria that are demonstrable, not asserted.
 
 | Phase | Deliverable | Done when |
 |---|---|---|
-| **1 · Architecture** | This spec, ARCHITECTURE, glossary, ADRs 0001–0006 | Decisions recorded with rationale and trade-offs — **current** |
-| **2 · Database** | Schema, Alembic migrations, KO versioning, repositories, publishing-window tables | A KO can be written, revised, and read back at any prior version |
+| **1 · Architecture** | This spec, ARCHITECTURE, glossary, ADRs 0001–0007 | Decisions recorded with rationale and trade-offs — **complete** |
+| **2 · Database** | Schema, Alembic migrations, KO versioning, repositories, publishing-window tables | A KO can be written, revised, and read back at any prior version — **next** |
 | **3 · Backend** | FastAPI, worker, Run/Step state machine, gates, quota ledger | A Run traverses every stage with fake providers, suspends at a gate, and resumes |
 | **4 · Frontend + CLI** | Dashboard shell, approval queue, CLI parity | Every gate is approvable from both the browser and the terminal |
 | **5 · Agents** | Research, extraction, verification, script, judge | An ORIGINS Topic yields a source-traced Knowledge Object and a Script |

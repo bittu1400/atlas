@@ -4,6 +4,7 @@ This file tells you **how to work in this repository**. It is not the product vi
 
 | Document | What it is | Authority |
 |---|---|---|
+| `docs/STATUS.md` | **Read first.** Current phase, verified environment, what is done vs merely decided | Authoritative for state |
 | `prompt.md` | The founder's original vision statement | Immutable. Never edit. Cite it, don't rewrite it. |
 | `docs/SPEC.md` | Product truth — what Atlas does and what "correct" means | Authoritative for behaviour |
 | `docs/ARCHITECTURE.md` | System structure, layering, module map | Authoritative for structure |
@@ -12,7 +13,10 @@ This file tells you **how to work in this repository**. It is not the product vi
 | `docs/DECISIONS.md` | Log of settled choices (D1–D28) | Record; supersede via ADR only |
 | `CLAUDE.md` | How to work here | This file |
 
-**Read order before any non-trivial change:** `docs/SPEC.md` → relevant ADR → the code.
+**Read order before any non-trivial change:** `docs/STATUS.md` → `docs/SPEC.md` → relevant ADR → the code.
+
+`docs/STATUS.md` comes first because every other document describes what Atlas *will* be. Only STATUS
+tells you what exists right now, and it is the one file to update at the end of a working session.
 
 ---
 
