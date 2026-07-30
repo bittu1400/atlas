@@ -1,0 +1,46 @@
+# --- Secrets -----------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# --- Node / Remotion ---------------------------------------------------------
+node_modules/
+.pnpm-store/
+apps/web/dist/
+apps/renderer/out/
+
+# --- Generated media & local storage ----------------------------------------
+# Renders and downloaded assets are content-addressed and reproducible.
+# They must never enter git history; they live behind the Storage interface.
+var/
+storage/
+out/
+*.mp4
+*.mov
+*.wav
+*.mp3
+
+# --- Local models ------------------------------------------------------------
+models/
+
+# --- Tooling -----------------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.log
