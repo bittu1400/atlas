@@ -141,8 +141,23 @@ weakened.
 
 Populated as the toolchain lands. Do not invent commands that are not listed here.
 
-```
-# not yet implemented — Phase 2
+```bash
+# Package management & dependencies
+uv sync --all-extras
+
+# Linting & Formatting
+uv run ruff check .
+uv run ruff format .
+
+# Type checking (strict mode)
+uv run mypy .
+
+# Test suite (unit, integration)
+uv run pytest
+
+# Database migrations (Alembic)
+uv run alembic upgrade head
+uv run alembic downgrade base
 ```
 
 ---

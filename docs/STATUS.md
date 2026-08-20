@@ -1,6 +1,6 @@
 # Status
 
-**Last updated:** 2026-07-30
+**Last updated:** 2026-08-20
 
 This file exists to separate **decided** from **done**. Everything else in `docs/` records what Atlas
 *will* be; this records where it actually stands. Update it at the end of every working session.
@@ -9,29 +9,33 @@ This file exists to separate **decided** from **done**. Everything else in `docs
 
 ## 1. Where we are
 
-**Phase 1 (Architecture) is complete.** Nothing is implemented. There is no `pyproject.toml`, no schema,
-no application code, and no `apps/` or `packages/` directory yet — the folder layout in
-`docs/ARCHITECTURE.md` §2 is the plan, not the current tree.
+**Phase 1 (Architecture) is complete.**
+**Phase 2 (Database & Persistence) is complete.**
+- Python 3.13 pinned via `uv`, `pyproject.toml`, strict `mypy`, `ruff`, and `pytest`.
+- Database schema and Alembic migrations (`0001_initial_schema`) establishing 26 tables in PostgreSQL.
+- Knowledge Object row-per-version with current pointer, typed core, versioned JSONB payload, and pure upcast-on-read mechanism (ADR-0003).
+- Full normalized foreign-key traceability: Assertion → Claim → Evidence → Source → Snapshot (content-addressed SHA-256).
+- Reverse Claim Impact Index (`claim_usages`) for retractions.
+- Pipeline execution state machine tables: Runs (capturing Focus by value), Steps (idempotency keys + checkpointing), Gates (suspension rows), Approvals (structured rejection feedback), Resource Locks (GPU lease semaphore), Model Calls audit, and Quota Ledger.
+- Publishing schedule and timezone schema seam (ADR-0007): Channels with audience timezone, seeded publishing windows with confidence and provenance, and enforced blackout rules.
+- LocalStorage content-addressed blob adapter (`var/blobs/sha256/ab/cd/<hash>`).
+- 25 unit and integration tests passing in ~1.1s against live PostgreSQL.
 
-**Phase 2 (Database) is next.** Acceptance criterion: a Knowledge Object can be written, revised, and
-read back at any prior version, with the traceability chain enforced by foreign keys rather than by
-application code. Scope includes the schema, Alembic migrations, the row-per-version mechanics from
-ADR-0003, repositories, and the publishing-window tables from ADR-0007.
-
-Do not reopen Phase 1 decisions without writing an ADR that supersedes the existing one.
+**Phase 3 (Backend) is next.** Acceptance criterion: A Run traverses every stage with fake providers,
+suspends at a gate, and resumes via API and CLI. Scope includes FastAPI routes, Dramatiq worker task
+definitions, the Run/Step state machine driver, gate suspension/resumption handlers, and quota token buckets.
 
 ---
 
 ## 2. What exists
 
 ```
-README.md            docs/SPEC.md          docs/adr/0001 orchestration & durability
-CLAUDE.md            docs/ARCHITECTURE.md  docs/adr/0002 focus model
-prompt.md            docs/GLOSSARY.md      docs/adr/0003 knowledge versioning & storage
-.gitignore           docs/DECISIONS.md     docs/adr/0004 provider ladder & quota
-                     docs/STATUS.md        docs/adr/0005 renderer — Remotion
-                                           docs/adr/0006 timing model
-                                           docs/adr/0007 publishing schedule & time zones
+pyproject.toml       packages/atlas/src/atlas/domain/       tests/unit/
+alembic.ini          packages/atlas/src/atlas/adapters/     tests/integration/
+README.md            packages/atlas/src/atlas/platform/     docs/SPEC.md
+CLAUDE.md            packages/atlas/src/atlas/application/  docs/ARCHITECTURE.md
+docs/STATUS.md       docs/DECISIONS.md                      docs/GLOSSARY.md
+docs/adr/            prompt.md                              var/
 ```
 
 Git: `main`, remote `origin` at `https://github.com/bittu1400/atlas.git`, local only until pushed.
@@ -107,3 +111,4 @@ Recorded in SPEC §16. Repeated here with the phase that forces the answer.
 | Date | Outcome |
 |---|---|
 | 2026-07-30 | Phase 1 completed. Vision reviewed against 38 identified gaps; D1–D38 settled; ADRs 0001–0007 written. Format changed from narrated 8-minute to 60-second text-and-sound-design. Budget fixed at zero. First channel changed from WHY to ORIGINS on archival imagery supply. Repo initialized, `main` pushed to GitHub. |
+| 2026-08-20 | Phase 2 completed. Python 3.13 project initialized with `uv`. Alembic migrations established 26 normalized PostgreSQL tables with foreign-key traceability. Row-per-version KO mechanics, JSONB upcast-on-read, Focus-by-value capture in Runs, GPU resource locks, quota ledger, and ADR-0007 publishing schedule seam implemented with 25 passing unit/integration tests. |

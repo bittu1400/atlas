@@ -1,0 +1,137 @@
+"""Typed domain and persistence exceptions for Atlas.
+
+Atlas forbids returning bare Exception or returning None to indicate failure.
+Every error has a clear semantic type and diagnostic message.
+"""
+
+
+class AtlasError(Exception):
+    """Base exception for all Atlas errors."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class KnowledgeError(AtlasError):
+    """Base error for knowledge management and traceability operations."""
+
+
+class KnowledgeObjectNotFoundError(KnowledgeError):
+    """Raised when a requested Knowledge Object does not exist."""
+
+    def __init__(self, ko_id: str, version: int | None = None) -> None:
+        if version is not None:
+            super().__init__(f"Knowledge Object '{ko_id}' version {version} not found")
+        else:
+            super().__init__(f"Knowledge Object '{ko_id}' not found")
+        self.ko_id = ko_id
+        self.version = version
+
+
+class TraceabilityConstraintError(KnowledgeError):
+    """Raised when an assertion or publication path violates the traceability invariant.
+
+    Invariant 1: Every statement published must trace Claim -> Evidence -> Source -> Snapshot.
+    """
+
+
+class UnsupportedClaimError(KnowledgeError):
+    """Raised when an unsupported claim without evidence is placed on a publication path."""
+
+
+class SourceNotFoundError(KnowledgeError):
+    """Raised when a referenced Source does not exist."""
+
+    def __init__(self, source_id: str) -> None:
+        super().__init__(f"Source '{source_id}' not found")
+        self.source_id = source_id
+
+
+class SnapshotNotFoundError(KnowledgeError):
+    """Raised when a referenced Snapshot does not exist."""
+
+    def __init__(self, snapshot_id: str) -> None:
+        super().__init__(f"Snapshot '{snapshot_id}' not found")
+        self.snapshot_id = snapshot_id
+
+
+class FocusError(AtlasError):
+    """Base error for Focus and scoping operations."""
+
+
+class FocusNotFoundError(FocusError):
+    """Raised when a referenced Focus does not exist."""
+
+    def __init__(self, focus_id: str) -> None:
+        super().__init__(f"Focus '{focus_id}' not found")
+        self.focus_id = focus_id
+
+
+class ExecutionError(AtlasError):
+    """Base error for workflow and pipeline execution."""
+
+
+class RunNotFoundError(ExecutionError):
+    """Raised when a requested Run is not found."""
+
+    def __init__(self, run_id: str) -> None:
+        super().__init__(f"Run '{run_id}' not found")
+        self.run_id = run_id
+
+
+class StepNotFoundError(ExecutionError):
+    """Raised when a requested Step is not found."""
+
+    def __init__(self, step_id: str) -> None:
+        super().__init__(f"Step '{step_id}' not found")
+        self.step_id = step_id
+
+
+class GateNotFoundError(ExecutionError):
+    """Raised when a requested Gate is not found."""
+
+    def __init__(self, gate_id: str) -> None:
+        super().__init__(f"Gate '{gate_id}' not found")
+        self.gate_id = gate_id
+
+
+class GateAlreadyResolvedError(ExecutionError):
+    """Raised when attempting to approve or reject an already resolved Gate."""
+
+    def __init__(self, gate_id: str, status: str) -> None:
+        super().__init__(f"Gate '{gate_id}' is already resolved with status '{status}'")
+        self.gate_id = gate_id
+        self.status = status
+
+
+class ResourceLockHeldError(ExecutionError):
+    """Raised when acquiring a resource lock (e.g. GPU lease) that is currently held."""
+
+    def __init__(self, resource_name: str, holder_id: str) -> None:
+        super().__init__(f"Resource lock for '{resource_name}' is currently held by '{holder_id}'")
+        self.resource_name = resource_name
+        self.holder_id = holder_id
+
+
+class QuotaExceededError(ExecutionError):
+    """Raised when an operation exceeds daily or per-minute provider quota budget."""
+
+    def __init__(self, provider: str, limit_type: str) -> None:
+        super().__init__(f"Quota exceeded for provider '{provider}' ({limit_type} limit)")
+        self.provider = provider
+        self.limit_type = limit_type
+
+
+class SchedulingError(AtlasError):
+    """Base error for publishing schedule and timezone resolution."""
+
+
+class BlackoutWindowViolationError(SchedulingError):
+    """Raised when a proposed publish slot violates the 06:00-22:00 audience-local blackout rule."""
+
+    def __init__(self, slot_local_time: str) -> None:
+        super().__init__(
+            f"Publish slot at '{slot_local_time}' violates the 06:00-22:00 audience-local blackout rule"
+        )
+        self.slot_local_time = slot_local_time
