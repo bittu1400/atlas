@@ -9,6 +9,7 @@ from atlas.adapters.persistence.tables import (
     SourceTable,
     TopicTable,
 )
+from atlas.domain.common.enums import SourceTier
 from atlas.domain.knowledge.models import (
     AssertionType,
     Claim,
@@ -19,7 +20,6 @@ from atlas.domain.knowledge.models import (
     EvidenceStance,
     Snapshot,
     Source,
-    SourceTier,
     Topic,
     TopicStatus,
 )
@@ -27,6 +27,7 @@ from atlas.platform.errors import (
     SnapshotNotFoundError,
     SourceNotFoundError,
 )
+from pydantic import HttpUrl
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -84,7 +85,7 @@ class SourceRepository:
         """Persist a Source record."""
         row = SourceTable(
             id=source.id,
-            url=source.url,
+            url=str(source.url),
             title=source.title,
             author=source.author,
             published_date=source.published_date,
@@ -102,7 +103,7 @@ class SourceRepository:
             raise SourceNotFoundError(source_id)
         return Source(
             id=row.id,
-            url=row.url,
+            url=HttpUrl(row.url),
             title=row.title,
             author=row.author,
             published_date=row.published_date,
@@ -252,6 +253,8 @@ class SourceRepository:
         self.session.add(row)
         await self.session.flush()
 
+    link_claim_evidence = link_evidence_to_claim
+
     # =========================================================================
     # Impact Index (Claim Usages for Retraction)
     # =========================================================================
@@ -287,3 +290,5 @@ class SourceRepository:
             )
             for r in result.scalars().all()
         ]
+
+    get_claim_usages = get_usages_for_claim

@@ -96,7 +96,7 @@ def upgrade() -> None:
         sa.Column("url", sa.Text(), nullable=False),
         sa.Column("title", sa.Text(), nullable=False),
         sa.Column("author", sa.String(256), nullable=True),
-        sa.Column("published_date", sa.String(64), nullable=True),
+        sa.Column("published_date", sa.Date(), nullable=True),
         sa.Column("source_tier", sa.String(32), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     )
@@ -275,7 +275,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("platform", sa.String(64), nullable=False),
-        sa.Column("format", sa.String(64), nullable=False),
+        sa.Column("content_format", sa.String(64), nullable=False),
         sa.Column("day_of_week", sa.Integer(), nullable=False),
         sa.Column("local_start_time", sa.Time(), nullable=False),
         sa.Column("local_end_time", sa.Time(), nullable=False),
@@ -286,15 +286,15 @@ def upgrade() -> None:
     op.create_index(
         "ix_pub_windows_lookup",
         "publishing_windows",
-        ["channel_id", "platform", "format", "day_of_week"],
+        ["channel_id", "platform", "content_format", "day_of_week"],
     )
 
     # 17. Blackout Rules
     op.create_table(
         "blackout_rules",
         sa.Column("id", sa.String(64), primary_key=True),
-        sa.Column("local_start_time", sa.Time(), nullable=False),
-        sa.Column("local_end_time", sa.Time(), nullable=False),
+        sa.Column("earliest_allowed_time", sa.Time(), nullable=False),
+        sa.Column("latest_allowed_time", sa.Time(), nullable=False),
         sa.Column("is_enforced", sa.Boolean(), nullable=False, server_default=sa.text("true")),
     )
 
@@ -318,6 +318,7 @@ def upgrade() -> None:
         sa.Column("captured_focus", json_type, nullable=False),
         sa.Column("trace_id", sa.String(64), nullable=False),
         sa.Column("actor_id", sa.String(64), nullable=False),
+        sa.Column("error", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
@@ -419,6 +420,8 @@ def upgrade() -> None:
         sa.Column("provider", sa.String(64), nullable=False),
         sa.Column("model_id", sa.String(128), nullable=False),
         sa.Column("prompt_version", sa.String(64), nullable=False),
+        sa.Column("parameters", sa.JSON(), nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column("code_version", sa.String(64), nullable=False),
         sa.Column("input_tokens", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("output_tokens", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("latency_ms", sa.Integer(), nullable=False, server_default="0"),
@@ -461,21 +464,21 @@ def _seed_initial_data() -> None:
         sa.table(
             "blackout_rules",
             sa.column("id", sa.String),
-            sa.column("local_start_time", sa.Time),
-            sa.column("local_end_time", sa.Time),
+            sa.column("earliest_allowed_time", sa.Time),
+            sa.column("latest_allowed_time", sa.Time),
             sa.column("is_enforced", sa.Boolean),
         ),
         [
             {
                 "id": "blk_default",
-                "local_start_time": time(6, 0),
-                "local_end_time": time(22, 0),
+                "earliest_allowed_time": time(6, 0),
+                "latest_allowed_time": time(22, 0),
                 "is_enforced": True,
             }
         ],
     )
 
-    # Seed Channel ORIGINS (ADR-0007, D4)
+    # Seed Channels (ORIGINS, WHY, HUMANS)
     op.bulk_insert(
         sa.table(
             "channels",
@@ -499,7 +502,35 @@ def _seed_initial_data() -> None:
                     "sound_profile": "tactile_keystroke_ambient",
                 },
                 "created_at": now,
-            }
+            },
+            {
+                "id": "why",
+                "name": "WHY",
+                "audience_timezone": "Europe/London",
+                "style_profile": {
+                    "display_font": "Space Grotesk",
+                    "body_font": "Inter",
+                    "target_duration_seconds": 90,
+                    "color_palette": ["#18181B", "#FAFAFA", "#A1A1AA"],
+                    "motion_style": "dynamic_kinetic",
+                    "sound_profile": "electronic_synth_warm",
+                },
+                "created_at": now,
+            },
+            {
+                "id": "humans",
+                "name": "HUMANS",
+                "audience_timezone": "Asia/Tokyo",
+                "style_profile": {
+                    "display_font": "Lora",
+                    "body_font": "Inter",
+                    "target_duration_seconds": 60,
+                    "color_palette": ["#1C1917", "#F5F5F4", "#D6D3D1"],
+                    "motion_style": "gentle_dissolve",
+                    "sound_profile": "acoustic_folk_minimal",
+                },
+                "created_at": now,
+            },
         ],
     )
 
@@ -546,6 +577,40 @@ def _seed_initial_data() -> None:
                     "source_tier_floor": "primary",
                     "vocabulary": ["manuscript", "treaty", "chronicle", "archaeology", "era"],
                     "disambiguation_hints": ["historical era", "century", "historical figure"],
+                },
+            },
+            {
+                "id": "dom_tech",
+                "name": "Technology",
+                "description": "Computer science, engineering, hardware, and software systems",
+                "research_profile": {
+                    "preferred_apis": ["openalex", "crossref", "arxiv"],
+                    "source_allowlist": [
+                        "*.acm.org",
+                        "*.ieee.org",
+                        "*.arxiv.org",
+                        "*.mit.edu",
+                    ],
+                    "source_tier_floor": "peer_reviewed",
+                    "vocabulary": ["algorithm", "architecture", "protocol", "computation"],
+                    "disambiguation_hints": ["computer science", "software", "hardware"],
+                },
+            },
+            {
+                "id": "dom_science",
+                "name": "Science",
+                "description": "Physics, chemistry, astronomy, and earth sciences",
+                "research_profile": {
+                    "preferred_apis": ["openalex", "crossref", "nasa"],
+                    "source_allowlist": [
+                        "*.nature.com",
+                        "*.sciencemag.org",
+                        "*.nasa.gov",
+                        "*.cern.ch",
+                    ],
+                    "source_tier_floor": "peer_reviewed",
+                    "vocabulary": ["quantum", "astronomy", "particle", "experiment", "theory"],
+                    "disambiguation_hints": ["physics", "chemistry", "astronomy"],
                 },
             },
         ],

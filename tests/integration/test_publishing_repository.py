@@ -41,7 +41,7 @@ async def test_channel_and_publishing_windows_lifecycle(
         id="win_yt_sun",
         channel_id="origins",
         platform="youtube",
-        format="horizontal_long",
+        content_format="horizontal_long",
         day_of_week=6,  # Sunday
         local_start_time=time(9, 0),
         local_end_time=time(11, 0),
@@ -54,7 +54,7 @@ async def test_channel_and_publishing_windows_lifecycle(
         id="win_tt_tue",
         channel_id="origins",
         platform="tiktok",
-        format="vertical_60s",
+        content_format="vertical_60s",
         day_of_week=1,  # Tuesday
         local_start_time=time(9, 0),
         local_end_time=time(12, 0),
@@ -67,7 +67,7 @@ async def test_channel_and_publishing_windows_lifecycle(
 
     # 3. Query Windows by Platform and Format
     tt_windows = await repo.get_windows(
-        channel_id="origins", platform="tiktok", format="vertical_60s"
+        channel_id="origins", platform="tiktok", content_format="vertical_60s"
     )
     assert len(tt_windows) == 1
     assert tt_windows[0].local_start_time == time(9, 0)
@@ -76,8 +76,8 @@ async def test_channel_and_publishing_windows_lifecycle(
     # 4. Save and Query Blackout Rules
     rule = BlackoutRule(
         id="blk_std",
-        local_start_time=time(6, 0),
-        local_end_time=time(22, 0),
+        earliest_allowed_time=time(6, 0),
+        latest_allowed_time=time(22, 0),
         is_enforced=True,
     )
     await repo.save_blackout_rule(rule)
@@ -85,5 +85,6 @@ async def test_channel_and_publishing_windows_lifecycle(
     active_rules = await repo.get_active_blackout_rules()
     assert len(active_rules) >= 1
     assert any(
-        r.local_start_time == time(6, 0) and r.local_end_time == time(22, 0) for r in active_rules
+        r.earliest_allowed_time == time(6, 0) and r.latest_allowed_time == time(22, 0)
+        for r in active_rules
     )

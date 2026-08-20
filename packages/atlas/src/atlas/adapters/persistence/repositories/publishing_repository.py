@@ -66,7 +66,7 @@ class PublishingRepository:
             id=window.id,
             channel_id=window.channel_id,
             platform=window.platform,
-            format=window.format,
+            content_format=window.content_format,
             day_of_week=window.day_of_week,
             local_start_time=window.local_start_time,
             local_end_time=window.local_end_time,
@@ -82,15 +82,15 @@ class PublishingRepository:
         self,
         channel_id: str,
         platform: str | None = None,
-        format: str | None = None,
+        content_format: str | None = None,
         day_of_week: int | None = None,
     ) -> list[PublishingWindow]:
         """Fetch matching Publishing Windows ordered by rank ascending."""
         stmt = select(PublishingWindowTable).where(PublishingWindowTable.channel_id == channel_id)
         if platform:
             stmt = stmt.where(PublishingWindowTable.platform == platform)
-        if format:
-            stmt = stmt.where(PublishingWindowTable.format == format)
+        if content_format:
+            stmt = stmt.where(PublishingWindowTable.content_format == content_format)
         if day_of_week is not None:
             stmt = stmt.where(PublishingWindowTable.day_of_week == day_of_week)
 
@@ -101,7 +101,7 @@ class PublishingRepository:
                 id=r.id,
                 channel_id=r.channel_id,
                 platform=r.platform,
-                format=r.format,
+                content_format=r.content_format,
                 day_of_week=r.day_of_week,
                 local_start_time=r.local_start_time,
                 local_end_time=r.local_end_time,
@@ -120,14 +120,14 @@ class PublishingRepository:
         """Persist a Blackout Rule."""
         existing = await self.session.get(BlackoutRuleTable, rule.id)
         if existing:
-            existing.local_start_time = rule.local_start_time
-            existing.local_end_time = rule.local_end_time
+            existing.earliest_allowed_time = rule.earliest_allowed_time
+            existing.latest_allowed_time = rule.latest_allowed_time
             existing.is_enforced = rule.is_enforced
         else:
             row = BlackoutRuleTable(
                 id=rule.id,
-                local_start_time=rule.local_start_time,
-                local_end_time=rule.local_end_time,
+                earliest_allowed_time=rule.earliest_allowed_time,
+                latest_allowed_time=rule.latest_allowed_time,
                 is_enforced=rule.is_enforced,
             )
             self.session.add(row)
@@ -141,8 +141,8 @@ class PublishingRepository:
         return [
             BlackoutRule(
                 id=r.id,
-                local_start_time=r.local_start_time,
-                local_end_time=r.local_end_time,
+                earliest_allowed_time=r.earliest_allowed_time,
+                latest_allowed_time=r.latest_allowed_time,
                 is_enforced=r.is_enforced,
             )
             for r in result.scalars().all()

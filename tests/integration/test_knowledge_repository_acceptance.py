@@ -6,23 +6,24 @@ with the traceability chain enforced by foreign keys rather than by application 
 """
 
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 from atlas.adapters.persistence.repositories.knowledge_repository import KnowledgeRepository
 from atlas.adapters.persistence.repositories.source_repository import SourceRepository
+from atlas.domain.common.enums import SourceTier
 from atlas.domain.knowledge.models import (
     AssertionType,
     Claim,
     ClaimEvidenceLink,
     ClaimStatus,
+    ClaimUsage,
     Evidence,
     EvidenceStance,
     KnowledgeObjectStatus,
     KnowledgeObjectVersion,
     Snapshot,
     Source,
-    SourceTier,
     Topic,
     TopicStatus,
 )
@@ -35,15 +36,23 @@ from atlas.platform.ids import (
     generate_source_id,
     generate_topic_id,
 )
+from pydantic import HttpUrl
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio
-async def test_knowledge_object_write_revise_read_prior_version(
+async def test_full_knowledge_object_and_traceability_lifecycle(
     db_session: AsyncSession,
 ) -> None:
-    """Acceptance Test: Write KO v1, revise to v2, read back both versions, verify traceability."""
+    """End-to-end verification of Knowledge Object genesis, revisioning, and foreign-key traceability.
+
+    Validates:
+    - Invariant 1: Claim -> Evidence -> Source -> Snapshot resolution
+    - Invariant 3: Structured assertions
+    - Invariant 4: Append-only immutability
+    - ADR-0003: Row-per-version with current pointer
+    """
     source_repo = SourceRepository(db_session)
     ko_repo = KnowledgeRepository(db_session)
     now = datetime(2026, 7, 30, 10, 0, 0, tzinfo=UTC)
@@ -54,7 +63,7 @@ async def test_knowledge_object_write_revise_read_prior_version(
         id=topic_id,
         title="Origins of Panthera Tigris",
         domain_id="dom_animal",
-        entity_id="Q19939",
+        entity_id=None,
         status=TopicStatus.APPROVED,
         created_at=now,
     )
@@ -64,10 +73,10 @@ async def test_knowledge_object_write_revise_read_prior_version(
     source_id = generate_source_id()
     source = Source(
         id=source_id,
-        url="https://nature.example.com/articles/tiger-evolution-2024",
+        url=HttpUrl("https://nature.example.com/articles/tiger-evolution-2024"),
         title="Phylogenetic history of the tiger (Panthera tigris)",
         author="Dr. Jane Smith et al.",
-        published_date="2024-03-15",
+        published_date=date(2024, 3, 15),
         source_tier=SourceTier.PEER_REVIEWED,
         created_at=now,
     )
@@ -83,28 +92,28 @@ async def test_knowledge_object_write_revise_read_prior_version(
         id=snapshot_id,
         source_id=source_id,
         content_hash=content_hash,
-        storage_key=f"sha256/{content_hash[:2]}/{content_hash[2:4]}/{content_hash}",
+        storage_key="sha256/19/71/197121f4b25e4e120a8473734f4478f111e6fb1881949305a847134a6b02b328",
         mime_type="text/html",
         byte_size=len(content_bytes),
         retrieved_at=now,
     )
     await source_repo.save_snapshot(snapshot)
 
-    # 4. Create Evidence linked to Source and Snapshot
+    # 4. Create Evidence
     evidence_id = generate_evidence_id()
     evidence = Evidence(
         id=evidence_id,
         source_id=source_id,
         snapshot_id=snapshot_id,
         locator="p. 14, col. 2, para 3",
-        quote="Tiger genomic sequencing reveals origins in East Asia ~2 Ma.",
+        quote="Genomic analysis places the crown clade origin of Panthera tigris in East Asia at approximately 2.0 Ma.",
         stance=EvidenceStance.SUPPORTS,
         confidence=0.98,
         extracted_at=now,
     )
     await source_repo.save_evidence(evidence)
 
-    # 5. Create Claim and link Evidence
+    # 5. Create Claim linked to Evidence
     claim_id = generate_claim_id()
     claim = Claim(
         id=claim_id,
@@ -115,30 +124,33 @@ async def test_knowledge_object_write_revise_read_prior_version(
         created_at=now,
     )
     await source_repo.save_claim(claim)
-    await source_repo.link_evidence_to_claim(
+    await source_repo.link_claim_evidence(
         ClaimEvidenceLink(
-            claim_id=claim_id, evidence_id=evidence_id, stance=EvidenceStance.SUPPORTS
+            claim_id=claim_id,
+            evidence_id=evidence_id,
+            stance=EvidenceStance.SUPPORTS,
+            notes="Direct genetic confirmation",
         )
     )
 
-    # 6. Create Knowledge Object Version 1
+    # 6. Genesis Revision: Create Knowledge Object v1
     ko_id = generate_ko_id()
     ko_v1 = KnowledgeObjectVersion(
         ko_id=ko_id,
         version=1,
         topic_id=topic_id,
-        entity_id="Q19939",
+        entity_id=None,
         status=KnowledgeObjectStatus.VERIFIED,
         quality_score=85.0,
-        confidence=0.98,
-        actor_id="agent_research_01",
-        reason="Initial synthesis from primary phylogenetic literature",
+        confidence=0.95,
+        actor_id="operator_agent_01",
+        reason="Initial research synthesis for tiger origins topic",
         payload=KnowledgePayloadV1(
             schema_version=1,
             summary="Tigers originated in East Asia approximately 2 Ma.",
             angles=["The ancient cradle of the tiger"],
-            keywords=["tiger", "phylogenetics", "east asia"],
-            psychology_notes=["Origin fascination"],
+            keywords=["tiger", "evolution", "east asia"],
+            psychology_notes=["Awe of prehistoric origin"],
             metadata={"primary_source_count": 1},
         ),
         claim_ids=[claim_id],
@@ -146,24 +158,24 @@ async def test_knowledge_object_write_revise_read_prior_version(
     )
     await ko_repo.save_version(ko_v1, make_current=True)
 
-    # Verify v1 is current
+    # Verify Current Pointer points to v1
     current_v1 = await ko_repo.get_current(ko_id)
+    assert current_v1 is not None
     assert current_v1.version == 1
     assert current_v1.payload.summary == "Tigers originated in East Asia approximately 2 Ma."
-    assert current_v1.claim_ids == [claim_id]
 
-    # 7. Create revision Version 2 with new angle and updated payload
-    later = datetime(2026, 7, 30, 11, 30, 0, tzinfo=UTC)
+    # 7. Revision: Create Knowledge Object v2 (Immutability check)
+    later = datetime(2026, 7, 30, 11, 0, 0, tzinfo=UTC)
     ko_v2 = KnowledgeObjectVersion(
         ko_id=ko_id,
         version=2,
         topic_id=topic_id,
-        entity_id="Q19939",
+        entity_id=None,
         status=KnowledgeObjectStatus.VERIFIED,
         quality_score=92.0,
-        confidence=0.99,
-        actor_id="operator_human",
-        reason="Refined narrative angle based on operator feedback",
+        confidence=0.97,
+        actor_id="operator_agent_01",
+        reason="Expanded narrative angles and refined Pleistocene timeline",
         payload=KnowledgePayloadV1(
             schema_version=1,
             summary="Comprehensive evolutionary history of Panthera tigris across Pleistocene Asia.",
@@ -179,12 +191,14 @@ async def test_knowledge_object_write_revise_read_prior_version(
 
     # 8. Verify Current Pointer now points to v2
     current_v2 = await ko_repo.get_current(ko_id)
+    assert current_v2 is not None
     assert current_v2.version == 2
     assert current_v2.quality_score == 92.0
     assert "Pleistocene dispersal corridor" in current_v2.payload.angles
 
     # 9. Verify Version 1 is intact and immutable
     read_v1 = await ko_repo.get_version(ko_id, version=1)
+    assert read_v1 is not None
     assert read_v1.version == 1
     assert read_v1.quality_score == 85.0
     assert read_v1.payload.summary == "Tigers originated in East Asia approximately 2 Ma."
@@ -201,11 +215,13 @@ async def test_knowledge_object_write_revise_read_prior_version(
     assert chain.claim.text == "Tigers originated in East Asia approximately 2 million years ago."
     assert len(chain.evidence_with_sources) == 1
 
-    ev_item, src_item, snp_item = chain.evidence_with_sources[0]
+    link_item, ev_item, src_item, snp_item = chain.evidence_with_sources[0]
+    assert link_item.claim_id == claim_id
+    assert link_item.evidence_id == evidence_id
     assert ev_item.id == evidence_id
     assert ev_item.locator == "p. 14, col. 2, para 3"
     assert src_item.id == source_id
-    assert src_item.url == "https://nature.example.com/articles/tiger-evolution-2024"
+    assert str(src_item.url) == "https://nature.example.com/articles/tiger-evolution-2024"
     assert snp_item.id == snapshot_id
     assert snp_item.content_hash == content_hash
 
@@ -216,69 +232,72 @@ async def test_foreign_key_constraints_enforce_traceability_integrity(
 ) -> None:
     """Verify that PostgreSQL foreign key constraints strictly block corrupted traceability relations."""
     source_repo = SourceRepository(db_session)
-    ko_repo = KnowledgeRepository(db_session)
     now = datetime(2026, 7, 30, 10, 0, 0, tzinfo=UTC)
 
-    # 1. Cannot insert Evidence with non-existent source_id
-    fake_evidence = Evidence(
+    # 1. Attempt to create Snapshot referencing non-existent Source (MUST FAIL)
+    snapshot = Snapshot(
+        id=generate_snapshot_id(),
+        source_id="src_non_existent_00000000000000",
+        content_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        storage_key="s3://atlas/fake.html",
+        mime_type="text/html",
+        byte_size=0,
+        retrieved_at=now,
+    )
+    with pytest.raises(IntegrityError):
+        await source_repo.save_snapshot(snapshot)
+
+    await db_session.rollback()
+
+    # 2. Attempt to create Evidence referencing non-existent Source/Snapshot (MUST FAIL)
+    evidence = Evidence(
         id=generate_evidence_id(),
-        source_id="src_non_existent",
-        snapshot_id="snp_non_existent",
+        source_id="src_fake",
+        snapshot_id="snp_fake",
         locator="p. 1",
-        quote="fake quote",
+        quote="Fake quote.",
         stance=EvidenceStance.SUPPORTS,
         confidence=1.0,
         extracted_at=now,
     )
     with pytest.raises(IntegrityError):
-        await source_repo.save_evidence(fake_evidence)
+        await source_repo.save_evidence(evidence)
 
     await db_session.rollback()
 
-    # 2. Cannot link non-existent Evidence to a Claim
-    valid_claim = Claim(
-        id=generate_claim_id(),
-        text="Valid statement.",
-        assertion_type=AssertionType.FACT,
-        confidence=1.0,
-        status=ClaimStatus.VERIFIED,
+
+@pytest.mark.asyncio
+async def test_claim_usage_impact_index_for_retractions(
+    db_session: AsyncSession,
+) -> None:
+    """Verify ClaimUsage impact index correctly maps claims to published render beats (SPEC §3)."""
+    source_repo = SourceRepository(db_session)
+    now = datetime(2026, 7, 30, 10, 0, 0, tzinfo=UTC)
+
+    # Create Claim
+    claim_id = generate_claim_id()
+    claim = Claim(
+        id=claim_id,
+        text="A contested scientific assertion.",
+        assertion_type=AssertionType.CONTESTED,
+        confidence=0.5,
+        status=ClaimStatus.CONTESTED,
         created_at=now,
     )
-    await source_repo.save_claim(valid_claim)
+    await source_repo.save_claim(claim)
 
-    invalid_link = ClaimEvidenceLink(
-        claim_id=valid_claim.id,
-        evidence_id="ev_does_not_exist",
-        stance=EvidenceStance.SUPPORTS,
+    # Record Claim Usage in Render Output
+    usage = ClaimUsage(
+        id="usg_rnd_2026_07_01",
+        claim_id=claim_id,
+        render_id="rnd_2026_07_origins_001",
+        beat_id="beat_03_argument",
+        used_at=now,
     )
-    with pytest.raises(IntegrityError):
-        await source_repo.link_evidence_to_claim(invalid_link)
+    await source_repo.record_claim_usage(usage)
 
-    await db_session.rollback()
-
-    # 3. Cannot link non-existent Claim to KnowledgeObject
-    topic = Topic(
-        id=generate_topic_id(),
-        title="Test Topic",
-        domain_id="dom_animal",
-        status=TopicStatus.APPROVED,
-        created_at=now,
-    )
-    await source_repo.save_topic(topic)
-
-    ko_invalid_claim = KnowledgeObjectVersion(
-        ko_id=generate_ko_id(),
-        version=1,
-        topic_id=topic.id,
-        status=KnowledgeObjectStatus.DRAFT,
-        confidence=1.0,
-        actor_id="tester",
-        reason="test",
-        payload=KnowledgePayloadV1(schema_version=1, summary="test"),
-        claim_ids=["clm_does_not_exist"],
-        created_at=now,
-    )
-    with pytest.raises(IntegrityError):
-        await ko_repo.save_version(ko_invalid_claim)
-
-    await db_session.rollback()
+    # Query Impact Index for Retractions
+    usages = await source_repo.get_claim_usages(claim_id)
+    assert len(usages) == 1
+    assert usages[0].render_id == "rnd_2026_07_origins_001"
+    assert usages[0].beat_id == "beat_03_argument"

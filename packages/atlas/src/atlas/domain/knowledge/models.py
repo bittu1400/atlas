@@ -8,21 +8,12 @@ Invariants strictly enforced:
 - ADR-0003: Row-per-version with current pointer and normalized foreign-key traceability.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
+from atlas.domain.common.enums import SourceTier
 from atlas.domain.knowledge.payload import KnowledgePayloadV1
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class SourceTier(StrEnum):
-    """Hierarchy of source authority as defined in SPEC §9."""
-
-    PRIMARY = "primary"
-    PEER_REVIEWED = "peer_reviewed"
-    INSTITUTIONAL = "institutional"
-    REFERENCE = "reference"
-    UNVETTED = "unvetted"
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class AssertionType(StrEnum):
@@ -90,10 +81,10 @@ class Source(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: str = Field(description="Unique Source identifier")
-    url: str = Field(description="Source URL or permanent identifier")
+    url: HttpUrl = Field(description="Source URL or permanent identifier")
     title: str = Field(description="Document title")
     author: str | None = Field(default=None, description="Author or publishing institution")
-    published_date: str | None = Field(default=None, description="Publication date if available")
+    published_date: date | None = Field(default=None, description="Publication date if available")
     source_tier: SourceTier = Field(description="Authority tier")
     created_at: datetime = Field(description="Creation timestamp in UTC")
 
@@ -105,10 +96,12 @@ class Snapshot(BaseModel):
 
     id: str = Field(description="Unique Snapshot identifier")
     source_id: str = Field(description="Source ID this snapshot archives")
-    content_hash: str = Field(description="SHA-256 hash of retrieved payload")
+    content_hash: str = Field(
+        pattern=r"^[a-f0-9]{64}$", description="SHA-256 hash of retrieved payload"
+    )
     storage_key: str = Field(description="Content-addressed storage locator")
     mime_type: str = Field(default="text/html", description="MIME type of stored payload")
-    byte_size: int = Field(description="Size in bytes")
+    byte_size: int = Field(ge=0, description="Size in bytes")
     retrieved_at: datetime = Field(description="Retrieval timestamp in UTC")
 
 
@@ -189,3 +182,12 @@ class ClaimUsage(BaseModel):
     render_id: str = Field(description="Published Render ID")
     beat_id: str = Field(description="Script Beat ID where claim was asserted")
     used_at: datetime = Field(description="Usage timestamp in UTC")
+
+
+class TraceabilityChain(BaseModel):
+    """Resolved traceability tree for a Claim."""
+
+    model_config = ConfigDict(frozen=True)
+
+    claim: Claim
+    evidence_with_sources: list[tuple[ClaimEvidenceLink, Evidence, Source, Snapshot]]

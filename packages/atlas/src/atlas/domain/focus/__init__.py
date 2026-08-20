@@ -1,6 +1,4 @@
-"""Domain focus module."""
-
-from atlas.domain.focus.models import (
+from .models import (
     ActiveFocusPointer,
     Domain,
     Entity,
@@ -12,12 +10,12 @@ from atlas.domain.focus.models import (
 )
 
 __all__ = [
-    "ActiveFocusPointer",
+    "ScopeMode",
+    "Facet",
+    "ResearchProfile",
     "Domain",
     "Entity",
-    "Facet",
     "Focus",
     "FocusSnapshot",
-    "ResearchProfile",
-    "ScopeMode",
+    "ActiveFocusPointer",
 ]

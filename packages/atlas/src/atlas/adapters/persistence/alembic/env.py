@@ -5,7 +5,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from atlas.adapters.persistence.tables import Base
-from atlas.platform.config import settings
+from atlas.platform.config import get_settings
 from sqlalchemy import engine_from_config, pool
 
 config = context.config
@@ -18,7 +18,14 @@ target_metadata = Base.metadata
 
 def get_url() -> str:
     """Get database sync url from settings or environment."""
-    return os.getenv("ATLAS_DATABASE_SYNC_URL", settings.database_sync_url)
+    # Tests inject sqlalchemy.url into the alembic config object directly
+    url_from_config = config.get_main_option("sqlalchemy.url")
+    if url_from_config:
+        return url_from_config
+
+    settings = get_settings()
+    env_url = os.getenv("ATLAS_DATABASE_SYNC_URL", settings.database_sync_url)
+    return env_url
 
 
 def run_migrations_offline() -> None:

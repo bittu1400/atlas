@@ -14,7 +14,7 @@ FORBIDDEN_MODULES = {
     "asyncpg",
     "psycopg",
     "httpx",
-    "pydantic_settings",
+    "pydantic_settings",  # pydantic itself is allowed (D39), but settings is not
     "fastapi",
     "dramatiq",
     "typer",

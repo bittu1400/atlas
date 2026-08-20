@@ -37,7 +37,7 @@ def to_operator_time(utc_dt: datetime) -> datetime:
     Used exclusively for dashboard UI, operator reminders, and quiet hours.
     """
     if utc_dt.tzinfo is None:
-        utc_dt = utc_dt.replace(tzinfo=UTC)
+        raise ValueError("Cannot convert naive datetime to operator time; tzinfo required")
     return utc_dt.astimezone(OPERATOR_TIMEZONE)
 
 
@@ -47,6 +47,6 @@ def to_audience_time(utc_dt: datetime, audience_tz_name: str) -> datetime:
     Uses real tz database rules at calculation time to accurately handle DST.
     """
     if utc_dt.tzinfo is None:
-        utc_dt = utc_dt.replace(tzinfo=UTC)
+        raise ValueError("Cannot convert naive datetime to audience time; tzinfo required")
     target_tz = ZoneInfo(audience_tz_name)
     return utc_dt.astimezone(target_tz)

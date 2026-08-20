@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 from atlas.adapters.persistence.repositories.focus_repository import FocusRepository
+from atlas.domain.common.enums import SourceTier
 from atlas.domain.focus.models import (
     Domain,
     Entity,
@@ -12,7 +13,6 @@ from atlas.domain.focus.models import (
     ResearchProfile,
     ScopeMode,
 )
-from atlas.domain.knowledge.models import SourceTier
 from atlas.platform.errors import FocusNotFoundError
 from atlas.platform.ids import generate_focus_id
 from sqlalchemy.ext.asyncio import AsyncSession

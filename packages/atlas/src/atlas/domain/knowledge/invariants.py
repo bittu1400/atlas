@@ -1,10 +1,18 @@
 """Pure domain invariant validators for the Knowledge System."""
 
-from atlas.domain.knowledge.models import AssertionType, Claim, ClaimStatus
+from atlas.domain.knowledge.models import (
+    AssertionType,
+    Claim,
+    ClaimEvidenceLink,
+    ClaimStatus,
+    EvidenceStance,
+)
 from atlas.platform.errors import TraceabilityConstraintError, UnsupportedClaimError
 
 
-def validate_claim_publication_readiness(claim: Claim, supporting_evidence_count: int) -> None:
+def validate_claim_publication_readiness(
+    claim: Claim, evidence_links: list[ClaimEvidenceLink]
+) -> None:
     """Validate that a Claim is legally ready to be published.
 
     Invariants checked:
@@ -12,6 +20,9 @@ def validate_claim_publication_readiness(claim: Claim, supporting_evidence_count
     2. A Claim without evidence cannot be verified.
     3. Inferences must reference parent claims.
     """
+    supporting_evidence_count = sum(
+        1 for e in evidence_links if e.stance == EvidenceStance.SUPPORTS
+    )
     if supporting_evidence_count == 0:
         if claim.status == ClaimStatus.VERIFIED:
             raise UnsupportedClaimError(

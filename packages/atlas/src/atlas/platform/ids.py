@@ -8,7 +8,7 @@ def generate_id(prefix: str) -> str:
 
     Prefixed IDs make logging, debugging, and cross-referencing unambiguous.
     """
-    clean_hex = uuid.uuid4().hex[:16]
+    clean_hex = uuid.uuid4().hex
     return f"{prefix}_{clean_hex}"
 
 

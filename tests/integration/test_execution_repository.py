@@ -14,12 +14,15 @@ from atlas.domain.execution.models import (
     GateStatus,
     GateType,
     IdempotencyKey,
+    ModelCall,
+    QuotaLedgerEntry,
     RejectionAction,
     RejectionFeedback,
     Run,
     RunStatus,
     Step,
     StepStatus,
+    WindowType,
 )
 from atlas.domain.focus.models import (
     Facet,
@@ -37,6 +40,7 @@ from atlas.platform.ids import (
     generate_approval_id,
     generate_focus_id,
     generate_gate_id,
+    generate_id,
     generate_run_id,
     generate_step_id,
     generate_topic_id,
@@ -299,3 +303,87 @@ async def test_resource_lock_semaphore(db_session: AsyncSession) -> None:
     # Worker 2 can now acquire lease
     lock2 = await repo.acquire_lock("gpu", holder_id="worker_02", ttl_seconds=60, priority=1)
     assert lock2.holder_id == "worker_02"
+
+
+@pytest.mark.asyncio
+async def test_model_calls_and_quota_ledger(db_session: AsyncSession) -> None:
+    """Verify metering of model calls and quota consumption."""
+    repo = ExecutionRepository(db_session)
+    source_repo = SourceRepository(db_session)
+    pub_repo = PublishingRepository(db_session)
+    now = datetime(2026, 7, 30, 10, 0, 0, tzinfo=UTC)
+
+    await pub_repo.save_channel(
+        Channel(id="origins", name="ORIGINS", audience_timezone="America/New_York", created_at=now)
+    )
+    topic_id = generate_topic_id()
+    await source_repo.save_topic(
+        Topic(id=topic_id, title="Topic", domain_id="dom_animal", created_at=now)
+    )
+    run_id = generate_run_id()
+    await repo.create_run(
+        Run(
+            id=run_id,
+            topic_id=topic_id,
+            channel_id="origins",
+            status=RunStatus.RUNNING,
+            captured_focus=FocusSnapshot(
+                focus_id="f1", scope_mode=ScopeMode.SOFT, facets=[], captured_at=now
+            ),
+            trace_id=generate_trace_id(),
+            actor_id="op",
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+    call = ModelCall(
+        id=generate_id("mc"),
+        run_id=run_id,
+        step_id=None,
+        provider="anthropic",
+        model_id="claude-3-opus",
+        prompt_version="v2.1",
+        parameters={"temp": 0.5},
+        code_version="abcdef123",
+        input_tokens=1000,
+        output_tokens=500,
+        latency_ms=2500,
+        cached=False,
+        outcome="success",
+        cost_usd=0.03,
+        created_at=now,
+    )
+    await repo.record_model_call(call)
+
+    entry = QuotaLedgerEntry(
+        id=generate_id("ql"),
+        provider="anthropic",
+        window_type=WindowType.DAY,
+        window_start=now,
+        tokens_consumed=1500,
+        requests_consumed=1,
+        run_id=run_id,
+        created_at=now,
+    )
+    await repo.record_quota_consumption(entry)
+
+    # Verify persistence with read-back
+    db_session.expunge_all()
+
+    from atlas.adapters.persistence.tables import ModelCallTable, QuotaLedgerTable
+    from sqlalchemy import select
+
+    mc = (
+        await db_session.execute(select(ModelCallTable).where(ModelCallTable.id == call.id))
+    ).scalar_one()
+    assert mc.parameters == {"temp": 0.5}
+    assert mc.code_version == "abcdef123"
+
+    qe = (
+        await db_session.execute(select(QuotaLedgerTable).where(QuotaLedgerTable.id == entry.id))
+    ).scalar_one()
+    assert qe.window_type == "day"
+
+    # Normally we'd assert on read, but repo doesn't have read methods for these yet
+    # so we just assert it doesn't crash, meaning the persistence layer accepted it.

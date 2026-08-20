@@ -1,6 +1,6 @@
 """Repository for Pipeline Execution, Runs, Steps, Gates, Approvals, Locks, and Quota."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from atlas.adapters.persistence.tables import (
     ApprovalTable,
@@ -36,7 +36,8 @@ from atlas.platform.errors import (
     RunNotFoundError,
     StepNotFoundError,
 )
-from sqlalchemy import delete
+from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -59,6 +60,7 @@ class ExecutionRepository:
             status=run.status.value,
             captured_focus=run.captured_focus.model_dump(mode="json"),
             trace_id=run.trace_id,
+            error=run.error,
             actor_id=run.actor_id,
             created_at=run.created_at,
             updated_at=run.updated_at,
@@ -93,6 +95,7 @@ class ExecutionRepository:
             status=RunStatus(row.status),
             captured_focus=focus_snapshot,
             trace_id=row.trace_id,
+            error=row.error,
             actor_id=row.actor_id,
             created_at=row.created_at,
             updated_at=row.updated_at,
@@ -111,6 +114,41 @@ class ExecutionRepository:
         if completed_at:
             row.completed_at = completed_at
         await self.session.flush()
+
+    async def list_runs(self, limit: int = 50) -> list[Run]:
+        """List pipeline Runs ordered by created_at desc."""
+        stmt = select(RunTable).order_by(RunTable.created_at.desc()).limit(limit)
+        result = await self.session.execute(stmt)
+        rows = result.scalars().all()
+        runs: list[Run] = []
+        for row in rows:
+            focus_data = dict(row.captured_focus)
+            facets = [Facet(**f) for f in focus_data.get("facets", [])]
+            focus_snapshot = FocusSnapshot(
+                focus_id=focus_data["focus_id"],
+                scope_mode=ScopeMode(focus_data["scope_mode"]),
+                facets=facets,
+                entity_id=focus_data.get("entity_id"),
+                captured_at=datetime.fromisoformat(focus_data["captured_at"])
+                if isinstance(focus_data["captured_at"], str)
+                else focus_data["captured_at"],
+            )
+            runs.append(
+                Run(
+                    id=row.id,
+                    topic_id=row.topic_id,
+                    channel_id=row.channel_id,
+                    status=RunStatus(row.status),
+                    captured_focus=focus_snapshot,
+                    trace_id=row.trace_id,
+                    error=row.error,
+                    actor_id=row.actor_id,
+                    created_at=row.created_at,
+                    updated_at=row.updated_at,
+                    completed_at=row.completed_at,
+                )
+            )
+        return runs
 
     # =========================================================================
     # Steps & Checkpointing
@@ -173,6 +211,29 @@ class ExecutionRepository:
             row.completed_at = completed_at
         await self.session.flush()
 
+    async def list_steps_for_run(self, run_id: str) -> list[Step]:
+        """List all Steps for a Run ordered by step_index."""
+        stmt = (
+            select(StepTable).where(StepTable.run_id == run_id).order_by(StepTable.step_index.asc())
+        )
+        result = await self.session.execute(stmt)
+        rows = result.scalars().all()
+        return [
+            Step(
+                id=r.id,
+                run_id=r.run_id,
+                step_name=r.step_name,
+                step_index=r.step_index,
+                status=StepStatus(r.status),
+                input_hash=r.input_hash,
+                output_artifact_ref=r.output_artifact_ref,
+                error=r.error,
+                started_at=r.started_at,
+                completed_at=r.completed_at,
+            )
+            for r in rows
+        ]
+
     # =========================================================================
     # Gates & Approvals (Human Suspension)
     # =========================================================================
@@ -207,9 +268,53 @@ class ExecutionRepository:
             resolved_at=row.resolved_at,
         )
 
+    async def list_gates_for_run(self, run_id: str) -> list[Gate]:
+        """List all Gates for a Run ordered by requested_at."""
+        stmt = (
+            select(GateTable)
+            .where(GateTable.run_id == run_id)
+            .order_by(GateTable.requested_at.asc())
+        )
+        result = await self.session.execute(stmt)
+        rows = result.scalars().all()
+        return [
+            Gate(
+                id=r.id,
+                run_id=r.run_id,
+                step_id=r.step_id,
+                gate_type=GateType(r.gate_type),
+                status=GateStatus(r.status),
+                requested_at=r.requested_at,
+                resolved_at=r.resolved_at,
+            )
+            for r in rows
+        ]
+
+    async def list_pending_gates(self) -> list[Gate]:
+        """List all Gates currently in pending status awaiting operator decision."""
+        stmt = (
+            select(GateTable)
+            .where(GateTable.status == GateStatus.PENDING.value)
+            .order_by(GateTable.requested_at.asc())
+        )
+        result = await self.session.execute(stmt)
+        rows = result.scalars().all()
+        return [
+            Gate(
+                id=r.id,
+                run_id=r.run_id,
+                step_id=r.step_id,
+                gate_type=GateType(r.gate_type),
+                status=GateStatus(r.status),
+                requested_at=r.requested_at,
+                resolved_at=r.resolved_at,
+            )
+            for r in rows
+        ]
+
     async def record_approval(self, approval: Approval) -> Approval:
         """Record human approval or structured rejection, resolving the Gate."""
-        gate_row = await self.session.get(GateTable, approval.gate_id)
+        gate_row = await self.session.get(GateTable, approval.gate_id, with_for_update=True)
         if not gate_row:
             raise GateNotFoundError(approval.gate_id)
         if gate_row.status != GateStatus.PENDING.value:
@@ -245,38 +350,54 @@ class ExecutionRepository:
         self, resource_name: str, holder_id: str, ttl_seconds: int, priority: int = 0
     ) -> ResourceLock:
         """Acquire a named resource lease if available or expired."""
+        if ttl_seconds <= 0:
+            raise ValueError("TTL must be positive")
+
         now = utc_now()
-        existing = await self.session.get(ResourceLockTable, resource_name)
-
-        if existing and existing.expires_at > now and existing.holder_id != holder_id:
-            raise ResourceLockHeldError(resource_name, existing.holder_id)
-
-        from datetime import timedelta
-
         expires_at = now + timedelta(seconds=ttl_seconds)
 
-        if existing:
-            existing.holder_id = holder_id
-            existing.priority = priority
-            existing.acquired_at = now
-            existing.expires_at = expires_at
-        else:
-            new_lock = ResourceLockTable(
+        stmt = (
+            insert(ResourceLockTable)
+            .values(
                 resource_name=resource_name,
                 holder_id=holder_id,
                 priority=priority,
                 acquired_at=now,
                 expires_at=expires_at,
             )
-            self.session.add(new_lock)
+            .on_conflict_do_update(
+                index_elements=["resource_name"],
+                set_={
+                    "holder_id": holder_id,
+                    "priority": priority,
+                    "acquired_at": now,
+                    "expires_at": expires_at,
+                },
+                where=(ResourceLockTable.expires_at <= now)
+                | (ResourceLockTable.holder_id == holder_id),
+            )
+            .returning(ResourceLockTable)
+        )
+
+        result = await self.session.execute(stmt)
+        row = result.scalar_one_or_none()
+
+        if not row:
+            # The update where clause failed, meaning it's held by someone else and not expired
+            stmt_get = select(ResourceLockTable).where(
+                ResourceLockTable.resource_name == resource_name
+            )
+            res = await self.session.execute(stmt_get)
+            held_by = res.scalar_one()
+            raise ResourceLockHeldError(resource_name, held_by.holder_id)
 
         await self.session.flush()
         return ResourceLock(
-            resource_name=resource_name,
-            holder_id=holder_id,
-            priority=priority,
-            acquired_at=now,
-            expires_at=expires_at,
+            resource_name=row.resource_name,
+            holder_id=row.holder_id,
+            priority=row.priority,
+            acquired_at=row.acquired_at,
+            expires_at=row.expires_at,
         )
 
     async def release_lock(self, resource_name: str, holder_id: str) -> None:
@@ -330,6 +451,8 @@ class ExecutionRepository:
             provider=call.provider,
             model_id=call.model_id,
             prompt_version=call.prompt_version,
+            parameters=call.parameters,
+            code_version=call.code_version,
             input_tokens=call.input_tokens,
             output_tokens=call.output_tokens,
             latency_ms=call.latency_ms,
@@ -347,7 +470,9 @@ class ExecutionRepository:
         row = QuotaLedgerTable(
             id=entry.id,
             provider=entry.provider,
-            window_type=entry.window_type,
+            window_type=entry.window_type.value
+            if hasattr(entry.window_type, "value")
+            else str(entry.window_type),
             window_start=entry.window_start,
             tokens_consumed=entry.tokens_consumed,
             requests_consumed=entry.requests_consumed,

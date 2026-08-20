@@ -47,4 +47,4 @@ def upcast_knowledge_payload(raw_payload: dict[str, Any] | None) -> KnowledgePay
         return KnowledgePayloadV1.model_validate(payload)
 
     # Future versions can chain here (e.g. v1 -> v2 -> v3)
-    return KnowledgePayloadV1.model_validate(payload)
+    raise ValueError(f"Unsupported schema version: {version}")

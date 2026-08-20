@@ -6,6 +6,7 @@ from atlas.adapters.persistence.tables import (
     EntityTable,
     FocusTable,
 )
+from atlas.domain.common.enums import SourceTier
 from atlas.domain.focus.models import (
     ActiveFocusPointer,
     Domain,
@@ -15,7 +16,6 @@ from atlas.domain.focus.models import (
     ResearchProfile,
     ScopeMode,
 )
-from atlas.domain.knowledge.models import SourceTier
 from atlas.platform.clock import utc_now
 from atlas.platform.errors import FocusNotFoundError
 from sqlalchemy import delete, select

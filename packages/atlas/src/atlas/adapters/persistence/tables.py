@@ -9,11 +9,13 @@ Enforces:
 - Seeded publishing windows and blackout rules from ADR-0007.
 """
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -23,6 +25,7 @@ from sqlalchemy import (
     String,
     Text,
     Time,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -48,10 +51,21 @@ class TopicTable(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
-    domain_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    entity_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    domain_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("domains.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    entity_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("entities.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="proposed")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('proposed', 'approved', 'researching', 'knowledge_ready', 'blocked', 'rejected', 'published')",
+            name="topics_status_check",
+        ),
+    )
 
 
 class SourceTable(Base):
@@ -63,14 +77,23 @@ class SourceTable(Base):
     url: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     author: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    published_date: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    published_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     source_tier: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     snapshots: Mapped[list["SnapshotTable"]] = relationship(
         back_populates="source", cascade="all, delete-orphan"
     )
-    evidence: Mapped[list["EvidenceTable"]] = relationship(back_populates="source")
+    evidence: Mapped[list["EvidenceTable"]] = relationship(
+        back_populates="source", overlaps="evidence,snapshot"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "source_tier IN ('primary', 'peer_reviewed', 'institutional', 'reference', 'unvetted')",
+            name="sources_source_tier_check",
+        ),
+    )
 
 
 class SnapshotTable(Base):
@@ -89,9 +112,19 @@ class SnapshotTable(Base):
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     source: Mapped["SourceTable"] = relationship(back_populates="snapshots")
-    evidence: Mapped[list["EvidenceTable"]] = relationship(back_populates="snapshot")
+    evidence: Mapped[list["EvidenceTable"]] = relationship(
+        back_populates="snapshot", overlaps="evidence,source"
+    )
 
-    __table_args__ = (Index("ix_snapshots_source_hash", "source_id", "content_hash"),)
+    __table_args__ = (
+        Index("ix_snapshots_source_hash", "source_id", "content_hash"),
+        UniqueConstraint("id", "source_id", name="uq_snapshot_source"),
+        CheckConstraint(
+            "storage_key = 'sha256/' || substr(content_hash, 1, 2) || '/' || substr(content_hash, 3, 2) || '/' || content_hash",
+            name="snapshots_storage_key_check",
+        ),
+        CheckConstraint("byte_size >= 0", name="snapshots_byte_size_check"),
+    )
 
 
 class EvidenceTable(Base):
@@ -103,18 +136,32 @@ class EvidenceTable(Base):
     source_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("sources.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    snapshot_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("snapshots.id", ondelete="RESTRICT"), nullable=False, index=True
-    )
+    snapshot_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     locator: Mapped[str] = mapped_column(String(256), nullable=False)
     quote: Mapped[str] = mapped_column(Text, nullable=False)
     stance: Mapped[str] = mapped_column(String(32), nullable=False, default="supports")
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     extracted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    source: Mapped["SourceTable"] = relationship(back_populates="evidence")
-    snapshot: Mapped["SnapshotTable"] = relationship(back_populates="evidence")
+    source: Mapped["SourceTable"] = relationship(
+        back_populates="evidence", overlaps="evidence,snapshot"
+    )
+    snapshot: Mapped["SnapshotTable"] = relationship(
+        back_populates="evidence", overlaps="evidence,source"
+    )
     claim_links: Mapped[list["ClaimEvidenceTable"]] = relationship(back_populates="evidence")
+
+    __table_args__ = (
+        CheckConstraint("stance IN ('supports', 'contradicts')", name="evidence_stance_check"),
+        CheckConstraint(
+            "confidence >= 0.0 AND confidence <= 1.0", name="evidence_confidence_check"
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_id", "source_id"],
+            ["snapshots.id", "snapshots.source_id"],
+            ondelete="RESTRICT",
+        ),
+    )
 
 
 class ClaimTable(Base):
@@ -139,6 +186,18 @@ class ClaimTable(Base):
     )
     usages: Mapped[list["ClaimUsageTable"]] = relationship(back_populates="claim")
 
+    __table_args__ = (
+        CheckConstraint(
+            "assertion_type IN ('fact', 'inference', 'opinion', 'contested')",
+            name="claims_assertion_type_check",
+        ),
+        CheckConstraint(
+            "status IN ('verified', 'unsupported', 'refuted', 'contested')",
+            name="claims_status_check",
+        ),
+        CheckConstraint("confidence >= 0.0 AND confidence <= 1.0", name="claims_confidence_check"),
+    )
+
 
 class ClaimEvidenceTable(Base):
     """Link table between Claim and supporting/contradicting Evidence."""
@@ -157,6 +216,12 @@ class ClaimEvidenceTable(Base):
     claim: Mapped["ClaimTable"] = relationship(back_populates="evidence_links")
     evidence: Mapped["EvidenceTable"] = relationship(back_populates="claim_links")
 
+    __table_args__ = (
+        CheckConstraint(
+            "stance IN ('supports', 'contradicts')", name="claim_evidence_stance_check"
+        ),
+    )
+
 
 class KnowledgeObjectVersionTable(Base):
     """Row-per-version immutable Knowledge Object revision."""
@@ -168,7 +233,9 @@ class KnowledgeObjectVersionTable(Base):
     topic_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("topics.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    entity_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    entity_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("entities.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
     quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
@@ -179,6 +246,19 @@ class KnowledgeObjectVersionTable(Base):
 
     claims: Mapped[list["KnowledgeObjectClaimTable"]] = relationship(
         back_populates="ko_version", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("ko_id", "version", name="uq_ko_version"),
+        CheckConstraint(
+            "status IN ('draft', 'verified', 'published', 'archived')",
+            name="ko_status_check",
+        ),
+        CheckConstraint("confidence >= 0.0 AND confidence <= 1.0", name="kov_confidence_check"),
+        CheckConstraint(
+            "quality_score IS NULL OR (quality_score >= 0.0 AND quality_score <= 100.0)",
+            name="kov_quality_score_check",
+        ),
     )
 
 
@@ -260,7 +340,9 @@ class EntityTable(Base):
     __tablename__ = "entities"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    wikidata_qid: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    wikidata_qid: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True, unique=True
+    )
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     domain_id: Mapped[str] = mapped_column(
@@ -278,9 +360,17 @@ class FocusTable(Base):
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     scope_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="soft")
     facets: Mapped[list[Any]] = mapped_column(JsonType, nullable=False, default=list)
-    entity_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    entity_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("entities.id", ondelete="SET NULL"), nullable=True
+    )
     actor_id: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "scope_mode IN ('hard', 'soft', 'exploratory')", name="focus_scope_mode_check"
+        ),
+    )
 
 
 class ActiveFocusTable(Base):
@@ -329,7 +419,7 @@ class PublishingWindowTable(Base):
         String(64), ForeignKey("channels.id", ondelete="CASCADE"), nullable=False, index=True
     )
     platform: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    format: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    content_format: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)
     local_start_time: Mapped[time] = mapped_column(Time, nullable=False)
     local_end_time: Mapped[time] = mapped_column(Time, nullable=False)
@@ -340,7 +430,17 @@ class PublishingWindowTable(Base):
     channel: Mapped["ChannelTable"] = relationship(back_populates="publishing_windows")
 
     __table_args__ = (
-        Index("ix_pub_windows_lookup", "channel_id", "platform", "format", "day_of_week"),
+        Index("ix_pub_windows_lookup", "channel_id", "platform", "content_format", "day_of_week"),
+        CheckConstraint(
+            "day_of_week >= 0 AND day_of_week <= 6", name="pub_windows_day_of_week_check"
+        ),
+        CheckConstraint(
+            "local_start_time < local_end_time", name="pub_windows_time_interval_check"
+        ),
+        CheckConstraint("rank >= 1", name="pub_windows_rank_check"),
+        CheckConstraint(
+            "confidence >= 0.0 AND confidence <= 1.0", name="pub_windows_confidence_check"
+        ),
     )
 
 
@@ -350,9 +450,15 @@ class BlackoutRuleTable(Base):
     __tablename__ = "blackout_rules"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    local_start_time: Mapped[time] = mapped_column(Time, nullable=False)
-    local_end_time: Mapped[time] = mapped_column(Time, nullable=False)
+    earliest_allowed_time: Mapped[time] = mapped_column(Time, nullable=False)
+    latest_allowed_time: Mapped[time] = mapped_column(Time, nullable=False)
     is_enforced: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "earliest_allowed_time < latest_allowed_time", name="blackout_time_interval_check"
+        ),
+    )
 
 
 # ============================================================================
@@ -376,6 +482,7 @@ class RunTable(Base):
     captured_focus: Mapped[dict[str, Any]] = mapped_column(JsonType, nullable=False)
     trace_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     actor_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -385,6 +492,13 @@ class RunTable(Base):
     )
     gates: Mapped[list["GateTable"]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'suspended', 'reworking', 'completed', 'failed', 'abandoned')",
+            name="runs_status_check",
+        ),
     )
 
 
@@ -407,9 +521,20 @@ class StepTable(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     run: Mapped["RunTable"] = relationship(back_populates="steps")
-    gates: Mapped[list["GateTable"]] = relationship(back_populates="step")
+    gates: Mapped[list["GateTable"]] = relationship(
+        back_populates="step",
+        foreign_keys="[GateTable.step_id, GateTable.run_id]",
+        overlaps="gates,step,run",
+    )
 
-    __table_args__ = (Index("ix_steps_idempotency", "run_id", "step_name", "input_hash"),)
+    __table_args__ = (
+        Index("ix_steps_idempotency", "run_id", "step_name", "input_hash", unique=True),
+        UniqueConstraint("id", "run_id", name="uq_step_run"),
+        CheckConstraint(
+            "status IN ('pending', 'running', 'suspended', 'succeeded', 'failed', 'skipped')",
+            name="steps_status_check",
+        ),
+    )
 
 
 class GateTable(Base):
@@ -421,18 +546,32 @@ class GateTable(Base):
     run_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    step_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("steps.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    step_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     gate_type: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
     requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    run: Mapped["RunTable"] = relationship(back_populates="gates")
-    step: Mapped["StepTable"] = relationship(back_populates="gates")
+    run: Mapped["RunTable"] = relationship(back_populates="gates", overlaps="gates,step,run")
+    step: Mapped["StepTable"] = relationship(
+        back_populates="gates",
+        foreign_keys="[GateTable.step_id, GateTable.run_id]",
+        overlaps="gates,step,run",
+    )
     approvals: Mapped[list["ApprovalTable"]] = relationship(
-        back_populates="gate", cascade="all, delete-orphan"
+        back_populates="gate",
+        cascade="all, delete-orphan",
+        foreign_keys="[ApprovalTable.gate_id, ApprovalTable.run_id]",
+        overlaps="approvals,gate,run",
+    )
+
+    __table_args__ = (
+        CheckConstraint("gate_type IN ('automatic', 'manual', 'hybrid')", name="gates_type_check"),
+        CheckConstraint("status IN ('pending', 'approved', 'rejected')", name="gates_status_check"),
+        ForeignKeyConstraint(
+            ["step_id", "run_id"], ["steps.id", "steps.run_id"], ondelete="CASCADE"
+        ),
+        UniqueConstraint("id", "run_id", name="uq_gate_run"),
     )
 
 
@@ -442,9 +581,7 @@ class ApprovalTable(Base):
     __tablename__ = "approvals"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    gate_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("gates.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    gate_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     run_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -453,7 +590,19 @@ class ApprovalTable(Base):
     feedback: Mapped[dict[str, Any] | None] = mapped_column(JsonType, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    gate: Mapped["GateTable"] = relationship(back_populates="approvals")
+    gate: Mapped["GateTable"] = relationship(
+        back_populates="approvals",
+        foreign_keys="[ApprovalTable.gate_id, ApprovalTable.run_id]",
+        overlaps="approvals,gate,run",
+    )
+
+    __table_args__ = (
+        CheckConstraint("decision IN ('approved', 'rejected')", name="approvals_decision_check"),
+        ForeignKeyConstraint(
+            ["gate_id", "run_id"], ["gates.id", "gates.run_id"], ondelete="CASCADE"
+        ),
+        UniqueConstraint("gate_id", name="uq_approval_gate"),
+    )
 
 
 class ResourceLockTable(Base):
@@ -477,7 +626,7 @@ class IdempotencyKeyTable(Base):
 
     key: Mapped[str] = mapped_column(String(256), primary_key=True)
     step_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("steps.id", ondelete="CASCADE"), nullable=False
+        String(64), ForeignKey("steps.id", ondelete="CASCADE"), nullable=False, unique=True
     )
     output_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -495,12 +644,12 @@ class ModelCallTable(Base):
     run_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    step_id: Mapped[str | None] = mapped_column(
-        String(64), ForeignKey("steps.id", ondelete="SET NULL"), nullable=True, index=True
-    )
+    step_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     provider: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     model_id: Mapped[str] = mapped_column(String(128), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JsonType, nullable=False, default=dict)
+    code_version: Mapped[str] = mapped_column(String(64), nullable=False)
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -509,6 +658,19 @@ class ModelCallTable(Base):
     cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IN ('success', 'error', 'rate_limited')", name="model_calls_outcome_check"
+        ),
+        CheckConstraint("input_tokens >= 0", name="model_calls_input_tokens_check"),
+        CheckConstraint("output_tokens >= 0", name="model_calls_output_tokens_check"),
+        CheckConstraint("latency_ms >= 0", name="model_calls_latency_ms_check"),
+        CheckConstraint("cost_usd >= 0.0", name="model_calls_cost_usd_check"),
+        ForeignKeyConstraint(
+            ["step_id", "run_id"], ["steps.id", "steps.run_id"], ondelete="SET NULL"
+        ),
     )
 
 
@@ -530,4 +692,9 @@ class QuotaLedgerTable(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    __table_args__ = (Index("ix_quota_window", "provider", "window_type", "window_start"),)
+    __table_args__ = (
+        Index("ix_quota_window", "provider", "window_type", "window_start"),
+        CheckConstraint("window_type IN ('minute', 'day')", name="quota_window_type_check"),
+        CheckConstraint("tokens_consumed >= 0", name="quota_tokens_consumed_check"),
+        CheckConstraint("requests_consumed >= 0", name="quota_requests_consumed_check"),
+    )

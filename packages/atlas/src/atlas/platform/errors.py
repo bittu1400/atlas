@@ -105,6 +105,37 @@ class GateAlreadyResolvedError(ExecutionError):
         self.status = status
 
 
+class InvalidGateDecisionError(ExecutionError):
+    """Raised when an invalid approval decision or malformed rejection feedback is supplied."""
+
+
+class InvalidStateTransitionError(ExecutionError):
+    """Raised when attempting an illegal state machine transition."""
+
+    def __init__(self, current_state: str, target_state: str) -> None:
+        super().__init__(f"Cannot transition from state '{current_state}' to '{target_state}'")
+        self.current_state = current_state
+        self.target_state = target_state
+
+
+class StepExecutionError(ExecutionError):
+    """Raised when a pipeline step fails during execution."""
+
+    def __init__(self, step_name: str, reason: str) -> None:
+        super().__init__(f"Step '{step_name}' failed: {reason}")
+        self.step_name = step_name
+        self.reason = reason
+
+
+class QualityGateFailedError(ExecutionError):
+    """Raised when a render artifact fails the quality rubric hard gate."""
+
+    def __init__(self, weighted_score: float, reason: str) -> None:
+        super().__init__(f"Quality gate failed with score {weighted_score:.1f}: {reason}")
+        self.weighted_score = weighted_score
+        self.reason = reason
+
+
 class ResourceLockHeldError(ExecutionError):
     """Raised when acquiring a resource lock (e.g. GPU lease) that is currently held."""
 
@@ -123,15 +154,48 @@ class QuotaExceededError(ExecutionError):
         self.limit_type = limit_type
 
 
+class RateLimitExceededError(ExecutionError):
+    """Raised when a provider's requests-per-minute threshold is hit."""
+
+    def __init__(self, provider: str, limit_type: str = "RPM") -> None:
+        super().__init__(f"Rate limit exceeded for provider '{provider}' ({limit_type})")
+        self.provider = provider
+        self.limit_type = limit_type
+
+
+class PolicyError(AtlasError):
+    """Base error for policy enforcement (license, gate, quality)."""
+
+
+class LicenseIncompatibleError(PolicyError):
+    """Raised when an asset's license forbids the intended use (Invariant 10)."""
+
+    def __init__(self, asset_id: str, license_id: str, reason: str) -> None:
+        super().__init__(f"Asset '{asset_id}' license '{license_id}' is incompatible: {reason}")
+        self.asset_id = asset_id
+        self.license_id = license_id
+        self.reason = reason
+
+
+class AiImageUnapprovedError(PolicyError):
+    """Raised when AI-generated imagery lacks explicit human approval (Invariant 9)."""
+
+    def __init__(self, asset_id: str) -> None:
+        super().__init__(
+            f"AI-generated asset '{asset_id}' requires explicit human approval before render"
+        )
+        self.asset_id = asset_id
+
+
 class SchedulingError(AtlasError):
     """Base error for publishing schedule and timezone resolution."""
 
 
 class BlackoutWindowViolationError(SchedulingError):
-    """Raised when a proposed publish slot violates the 06:00-22:00 audience-local blackout rule."""
+    """Raised when a proposed publish slot violates the 22:00-06:00 audience-local blackout rule."""
 
     def __init__(self, slot_local_time: str) -> None:
         super().__init__(
-            f"Publish slot at '{slot_local_time}' violates the 06:00-22:00 audience-local blackout rule"
+            f"Publish slot at '{slot_local_time}' violates the 22:00-06:00 audience-local blackout rule"
         )
         self.slot_local_time = slot_local_time

@@ -10,7 +10,7 @@ As specified in ADR-0002:
 from datetime import datetime
 from enum import StrEnum
 
-from atlas.domain.knowledge.models import SourceTier
+from atlas.domain.common.enums import SourceTier
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -68,7 +68,7 @@ class Entity(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: str = Field(description="Entity ID or QID (e.g. Q19939)")
-    wikidata_qid: str | None = Field(default=None, description="Wikidata QID")
+    wikidata_qid: str | None = Field(default=None, pattern=r"^Q\d+$", description="Wikidata QID")
     name: str = Field(description="Primary label / name")
     description: str | None = Field(default=None, description="Entity disambiguation description")
     domain_id: str = Field(description="Associated Domain ID")
@@ -99,6 +99,19 @@ class FocusSnapshot(BaseModel):
     facets: list[Facet] = Field(description="Facets captured at Run creation")
     entity_id: str | None = Field(default=None, description="Entity ID at capture time")
     captured_at: datetime = Field(description="Capture timestamp in UTC")
+
+    @classmethod
+    def from_focus(cls, focus: Focus) -> "FocusSnapshot":
+        """Capture an immutable snapshot from an active Focus."""
+        from atlas.platform.clock import utc_now
+
+        return cls(
+            focus_id=focus.id,
+            scope_mode=focus.scope_mode,
+            facets=list(focus.facets),
+            entity_id=focus.entity_id,
+            captured_at=utc_now(),
+        )
 
 
 class ActiveFocusPointer(BaseModel):

@@ -10,9 +10,11 @@ from atlas.adapters.persistence.tables import (
     SnapshotTable,
     SourceTable,
 )
+from atlas.domain.common.enums import SourceTier
 from atlas.domain.knowledge.models import (
     AssertionType,
     Claim,
+    ClaimEvidenceLink,
     ClaimStatus,
     Evidence,
     EvidenceStance,
@@ -20,25 +22,14 @@ from atlas.domain.knowledge.models import (
     KnowledgeObjectVersion,
     Snapshot,
     Source,
-    SourceTier,
+    TraceabilityChain,
 )
 from atlas.domain.knowledge.upcast import upcast_knowledge_payload
 from atlas.platform.clock import utc_now
 from atlas.platform.errors import KnowledgeObjectNotFoundError
-from sqlalchemy import delete, select
+from pydantic import HttpUrl
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-
-class TraceabilityChain:
-    """Resolved traceability tree for a Claim."""
-
-    def __init__(
-        self,
-        claim: Claim,
-        evidence_with_sources: list[tuple[Evidence, Source, Snapshot]],
-    ) -> None:
-        self.claim = claim
-        self.evidence_with_sources = evidence_with_sources
 
 
 class KnowledgeRepository:
@@ -48,106 +39,139 @@ class KnowledgeRepository:
         self.session = session
 
     async def save_version(
-        self, ko: KnowledgeObjectVersion, make_current: bool = True
+        self, version: KnowledgeObjectVersion, make_current: bool = True
     ) -> KnowledgeObjectVersion:
-        """Atomically persist a Knowledge Object revision and update current pointer."""
-        # 1. Insert revision row
+        """Persist a new immutable Knowledge Object version and optionally advance the current pointer."""
+        # 1. Insert version row
         version_row = KnowledgeObjectVersionTable(
-            ko_id=ko.ko_id,
-            version=ko.version,
-            topic_id=ko.topic_id,
-            entity_id=ko.entity_id,
-            status=ko.status.value,
-            quality_score=ko.quality_score,
-            confidence=ko.confidence,
-            actor_id=ko.actor_id,
-            reason=ko.reason,
-            payload=ko.payload.model_dump(mode="json"),
-            created_at=ko.created_at,
+            ko_id=version.ko_id,
+            version=version.version,
+            topic_id=version.topic_id,
+            entity_id=version.entity_id,
+            status=version.status.value,
+            quality_score=version.quality_score,
+            confidence=version.confidence,
+            actor_id=version.actor_id,
+            reason=version.reason,
+            payload=version.payload.model_dump(mode="json"),
+            created_at=version.created_at,
         )
         self.session.add(version_row)
 
-        # 2. Insert claim associations
-        for claim_id in ko.claim_ids:
+        # 2. Insert claim links
+        for claim_id in version.claim_ids:
             claim_link = KnowledgeObjectClaimTable(
-                ko_id=ko.ko_id,
-                version=ko.version,
+                ko_id=version.ko_id,
+                version=version.version,
                 claim_id=claim_id,
             )
             self.session.add(claim_link)
 
-        # 3. Update current pointer
-        if make_current:
-            await self.session.flush()
-            # Remove existing current pointer if any
-            await self.session.execute(
-                delete(KnowledgeObjectCurrentTable).where(
-                    KnowledgeObjectCurrentTable.ko_id == ko.ko_id
-                )
-            )
-            current_row = KnowledgeObjectCurrentTable(
-                ko_id=ko.ko_id,
-                current_version=ko.version,
-                updated_at=utc_now(),
-            )
-            self.session.add(current_row)
-
+        # Flush version row to satisfy FK for current pointer
         await self.session.flush()
-        return ko
 
-    async def get_current(self, ko_id: str) -> KnowledgeObjectVersion:
-        """Retrieve the current active version of a Knowledge Object."""
-        stmt = (
-            select(KnowledgeObjectVersionTable)
-            .join(
-                KnowledgeObjectCurrentTable,
-                (KnowledgeObjectVersionTable.ko_id == KnowledgeObjectCurrentTable.ko_id)
-                & (
-                    KnowledgeObjectVersionTable.version
-                    == KnowledgeObjectCurrentTable.current_version
-                ),
+        # 3. Advance current pointer if requested
+        if make_current:
+            existing_ptr = await self.session.get(
+                KnowledgeObjectCurrentTable, version.ko_id, with_for_update=True
             )
-            .where(KnowledgeObjectVersionTable.ko_id == ko_id)
-        )
-        result = await self.session.execute(stmt)
-        row = result.scalar_one_or_none()
-        if not row:
-            raise KnowledgeObjectNotFoundError(ko_id)
+            if existing_ptr:
+                if version.version != existing_ptr.current_version + 1:
+                    raise ValueError(
+                        f"Version must be exactly {existing_ptr.current_version + 1}, got {version.version}"
+                    )
+                existing_ptr.current_version = version.version
+                existing_ptr.updated_at = utc_now()
+            else:
+                if version.version != 1:
+                    raise ValueError(f"Initial version must be 1, got {version.version}")
+                ptr_row = KnowledgeObjectCurrentTable(
+                    ko_id=version.ko_id,
+                    current_version=version.version,
+                    updated_at=utc_now(),
+                )
+                self.session.add(ptr_row)
+            await self.session.flush()
 
-        claim_ids = await self._get_claim_ids(row.ko_id, row.version)
-        return self._to_domain(row, claim_ids)
+        return version
 
-    async def get_version(self, ko_id: str, version: int) -> KnowledgeObjectVersion:
-        """Retrieve a specific historical version of a Knowledge Object."""
+    async def get_version(self, ko_id: str, version: int) -> KnowledgeObjectVersion | None:
+        """Fetch a specific version of a Knowledge Object with upcast payload."""
         stmt = select(KnowledgeObjectVersionTable).where(
             (KnowledgeObjectVersionTable.ko_id == ko_id)
             & (KnowledgeObjectVersionTable.version == version)
         )
-        result = await self.session.execute(stmt)
-        row = result.scalar_one_or_none()
+        row = (await self.session.execute(stmt)).scalar_one_or_none()
         if not row:
-            raise KnowledgeObjectNotFoundError(ko_id, version=version)
+            return None
+
+        claim_ids = await self._get_claim_ids(ko_id, version)
+        return self._to_domain(row, claim_ids)
+
+    async def get_current(self, ko_id: str) -> KnowledgeObjectVersion | None:
+        """Fetch the current active version of a Knowledge Object."""
+        stmt = (
+            select(KnowledgeObjectVersionTable)
+            .join(
+                KnowledgeObjectCurrentTable,
+                (KnowledgeObjectCurrentTable.ko_id == KnowledgeObjectVersionTable.ko_id)
+                & (
+                    KnowledgeObjectCurrentTable.current_version
+                    == KnowledgeObjectVersionTable.version
+                ),
+            )
+            .where(KnowledgeObjectVersionTable.ko_id == ko_id)
+        )
+        row = (await self.session.execute(stmt)).scalar_one_or_none()
+        if not row:
+            return None
+
+        claim_ids = await self._get_claim_ids(ko_id, row.version)
+        return self._to_domain(row, claim_ids)
+
+    async def get_current_for_topic(self, topic_id: str) -> KnowledgeObjectVersion | None:
+        """Fetch the current Knowledge Object version for a given Topic."""
+        stmt = (
+            select(KnowledgeObjectVersionTable)
+            .join(
+                KnowledgeObjectCurrentTable,
+                (KnowledgeObjectCurrentTable.ko_id == KnowledgeObjectVersionTable.ko_id)
+                & (
+                    KnowledgeObjectCurrentTable.current_version
+                    == KnowledgeObjectVersionTable.version
+                ),
+            )
+            .where(KnowledgeObjectVersionTable.topic_id == topic_id)
+        )
+        row = (await self.session.execute(stmt)).scalar_one_or_none()
+        if not row:
+            return None
 
         claim_ids = await self._get_claim_ids(row.ko_id, row.version)
         return self._to_domain(row, claim_ids)
 
     async def get_history(self, ko_id: str) -> list[KnowledgeObjectVersion]:
-        """Retrieve all historical revisions for a Knowledge Object in chronological order."""
+        """Fetch the full append-only revision history of a Knowledge Object."""
         stmt = (
             select(KnowledgeObjectVersionTable)
             .where(KnowledgeObjectVersionTable.ko_id == ko_id)
             .order_by(KnowledgeObjectVersionTable.version.asc())
         )
-        result = await self.session.execute(stmt)
-        rows = result.scalars().all()
+        rows = (await self.session.execute(stmt)).scalars().all()
         if not rows:
-            raise KnowledgeObjectNotFoundError(ko_id)
+            return []
 
-        history = []
-        for row in rows:
-            claim_ids = await self._get_claim_ids(row.ko_id, row.version)
-            history.append(self._to_domain(row, claim_ids))
-        return history
+        # Batch-fetch all associated claim IDs in a single query (eliminates N+1)
+        claims_stmt = select(
+            KnowledgeObjectClaimTable.version, KnowledgeObjectClaimTable.claim_id
+        ).where(KnowledgeObjectClaimTable.ko_id == ko_id)
+        claim_rows = (await self.session.execute(claims_stmt)).all()
+
+        claims_by_version: dict[int, list[str]] = {}
+        for ver, cid in claim_rows:
+            claims_by_version.setdefault(ver, []).append(cid)
+
+        return [self._to_domain(row, claims_by_version.get(row.version, [])) for row in rows]
 
     async def get_traceability_chain(self, claim_id: str) -> TraceabilityChain:
         """Resolve the full Claim -> Evidence -> Source -> Snapshot provenance tree."""
@@ -167,18 +191,24 @@ class KnowledgeRepository:
             created_at=claim_row.created_at,
         )
 
-        # 2. Fetch linked Evidence, Sources, and Snapshots
+        # 2. Fetch linked ClaimEvidenceLink, Evidence, Sources, and Snapshots
         stmt = (
-            select(EvidenceTable, SourceTable, SnapshotTable)
-            .join(ClaimEvidenceTable, ClaimEvidenceTable.evidence_id == EvidenceTable.id)
+            select(ClaimEvidenceTable, EvidenceTable, SourceTable, SnapshotTable)
+            .join(EvidenceTable, ClaimEvidenceTable.evidence_id == EvidenceTable.id)
             .join(SourceTable, EvidenceTable.source_id == SourceTable.id)
             .join(SnapshotTable, EvidenceTable.snapshot_id == SnapshotTable.id)
             .where(ClaimEvidenceTable.claim_id == claim_id)
         )
         result = await self.session.execute(stmt)
 
-        evidence_with_sources = []
-        for ev_row, src_row, snp_row in result.all():
+        evidence_with_sources: list[tuple[ClaimEvidenceLink, Evidence, Source, Snapshot]] = []
+        for link_row, ev_row, src_row, snp_row in result.all():
+            link = ClaimEvidenceLink(
+                claim_id=link_row.claim_id,
+                evidence_id=link_row.evidence_id,
+                stance=EvidenceStance(link_row.stance),
+                notes=link_row.notes,
+            )
             evidence = Evidence(
                 id=ev_row.id,
                 source_id=ev_row.source_id,
@@ -191,7 +221,7 @@ class KnowledgeRepository:
             )
             source = Source(
                 id=src_row.id,
-                url=src_row.url,
+                url=HttpUrl(src_row.url),
                 title=src_row.title,
                 author=src_row.author,
                 published_date=src_row.published_date,
@@ -207,7 +237,7 @@ class KnowledgeRepository:
                 byte_size=snp_row.byte_size,
                 retrieved_at=snp_row.retrieved_at,
             )
-            evidence_with_sources.append((evidence, source, snapshot))
+            evidence_with_sources.append((link, evidence, source, snapshot))
 
         return TraceabilityChain(claim=claim, evidence_with_sources=evidence_with_sources)
 

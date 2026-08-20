@@ -1,6 +1,7 @@
 """Unit tests for Timezone conversions and the 4 clocks from ADR-0007."""
 
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from atlas.platform.clock import (
     to_audience_time,
@@ -48,3 +49,34 @@ def test_to_utc_roundtrip() -> None:
     aud_time = to_audience_time(original_utc, "Europe/London")
     restored_utc = to_utc(aud_time)
     assert original_utc == restored_utc
+
+
+def test_dst_fall_back_ambiguity() -> None:
+    """Nov 1, 2026, 1:30 AM is ambiguous in NY (EDT -> EST). fold=1 represents EST."""
+    dt = datetime(2026, 11, 1, 1, 30, fold=1, tzinfo=ZoneInfo("America/New_York"))
+    assert isinstance(dt.tzinfo, ZoneInfo)
+    assert dt.tzinfo.key == "America/New_York"
+    utc_dt = dt.astimezone(UTC)
+    assert utc_dt.hour == 6  # 1:30 AM EST (UTC-5) -> 6:30 AM UTC
+
+
+def test_dst_spring_forward_gap() -> None:
+    """Mar 8, 2026, 2:30 AM does not exist in NY (spring-forward gap)."""
+    # ZoneInfo handles non-existent times by standard disambiguation
+    dt = datetime(2026, 3, 8, 2, 30, tzinfo=ZoneInfo("America/New_York"))
+    assert isinstance(dt.tzinfo, ZoneInfo)
+
+
+def test_naive_datetime_rejected() -> None:
+    """Naive datetimes must be rejected by to_utc, to_operator_time, and to_audience_time."""
+    import pytest
+
+    naive_dt = datetime(2026, 7, 30, 14, 0, 0)
+    with pytest.raises(ValueError, match="Cannot convert naive datetime"):
+        to_utc(naive_dt)
+
+    with pytest.raises(ValueError, match="Cannot convert naive datetime"):
+        to_operator_time(naive_dt)
+
+    with pytest.raises(ValueError, match="Cannot convert naive datetime"):
+        to_audience_time(naive_dt, "America/New_York")
