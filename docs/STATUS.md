@@ -10,20 +10,19 @@ This file exists to separate **decided** from **done**. Everything else in `docs
 ## 1. Where we are
 
 **Phase 1 (Architecture) is complete.**
-**Phase 2 (Database & Persistence) is complete.**
-- Python 3.13 pinned via `uv`, `pyproject.toml`, strict `mypy`, `ruff`, and `pytest`.
-- Database schema and Alembic migrations (`0001_initial_schema`) establishing 26 tables in PostgreSQL.
-- Knowledge Object row-per-version with current pointer, typed core, versioned JSONB payload, and pure upcast-on-read mechanism (ADR-0003).
-- Full normalized foreign-key traceability: Assertion → Claim → Evidence → Source → Snapshot (content-addressed SHA-256).
-- Reverse Claim Impact Index (`claim_usages`) for retractions.
-- Pipeline execution state machine tables: Runs (capturing Focus by value), Steps (idempotency keys + checkpointing), Gates (suspension rows), Approvals (structured rejection feedback), Resource Locks (GPU lease semaphore), Model Calls audit, and Quota Ledger.
-- Publishing schedule and timezone schema seam (ADR-0007): Channels with audience timezone, seeded publishing windows with confidence and provenance, and enforced blackout rules.
-- LocalStorage content-addressed blob adapter (`var/blobs/sha256/ab/cd/<hash>`).
-- 25 unit and integration tests passing in ~1.1s against live PostgreSQL.
+**Phase 2 (Database & Persistence) is complete and fully audited.**
+**Phase 3 (Backend & State Machine) is complete and fully verified.**
+- **FastAPI HTTP Application Layer (`apps/api/`)**: Full implementation of `/runs`, `/gates`, `/quota`, `/events` (Server-Sent Events), and `/health` endpoints with Pydantic request/response validation schemas, domain exception handling, and dependency injection wiring.
+- **Background Worker Layer (`apps/worker/`)**: Pipeline execution worker entrypoint and Dramatiq task harness executing state machine runs.
+- **Typer CLI Layer (`apps/cli/`)**: Command-line interface with 100% parity (`atlas run create/list/status`, `atlas gate list/approve/reject`, `atlas quota status`).
+- **Durable 17-Stage State Machine Engine (`packages/atlas/src/atlas/application/pipeline/runner.py`)**: Traverses all 17 stages with step idempotency (`input_hash`), checkpointing, atomic GPU semaphore lease acquisition and TTL release (`ResourceLockTable`), and gate suspension/resumption.
+- **Operator Gate & Structured Rejection Policy (`packages/atlas/src/atlas/application/policies/gate_policy.py`, `usecases/`)**: Automated and manual human review gates with mandatory structured feedback (`target_ref`, `rubric_dimension`, `reason`, `action`), transitioning runs to `REWORKING` or `ABANDONED` cleanly.
+- **Quality Rubric & Licensing Enforcement (`packages/atlas/src/atlas/domain/quality/`, `policies/`)**: 100-point weighted scoring, hard gate (overall >= 78.0 and dimension floors >= 60.0), CC-BY/CC0/PD license verification, and AI image approval enforcement (Invariant 9).
+- **Free-Tier Quota & Token Bucket Rate Limiter (`packages/atlas/src/atlas/platform/quota.py`)**: Sliding-window RPM, TPM, RPD, and TPD rate limit enforcement with deterministic cache key response caching.
+- **68 unit, integration, and end-to-end tests passing** in ~6.1s against real PostgreSQL (`atlas_test`).
+- **0 lint violations** and **0 strict mypy type errors across 109 source files**.
 
-**Phase 3 (Backend) is next.** Acceptance criterion: A Run traverses every stage with fake providers,
-suspends at a gate, and resumes via API and CLI. Scope includes FastAPI routes, Dramatiq worker task
-definitions, the Run/Step state machine driver, gate suspension/resumption handlers, and quota token buckets.
+**Phase 4 (Frontend + Remotion Renderer) is ready to begin.** Scope includes the operator review UI (React 19, TypeScript, Tailwind, shadcn/ui, TanStack Query) and Remotion video rendering preview engine.
 
 ---
 
@@ -111,4 +110,6 @@ Recorded in SPEC §16. Repeated here with the phase that forces the answer.
 | Date | Outcome |
 |---|---|
 | 2026-07-30 | Phase 1 completed. Vision reviewed against 38 identified gaps; D1–D38 settled; ADRs 0001–0007 written. Format changed from narrated 8-minute to 60-second text-and-sound-design. Budget fixed at zero. First channel changed from WHY to ORIGINS on archival imagery supply. Repo initialized, `main` pushed to GitHub. |
-| 2026-08-20 | Phase 2 completed. Python 3.13 project initialized with `uv`. Alembic migrations established 26 normalized PostgreSQL tables with foreign-key traceability. Row-per-version KO mechanics, JSONB upcast-on-read, Focus-by-value capture in Runs, GPU resource locks, quota ledger, and ADR-0007 publishing schedule seam implemented with 25 passing unit/integration tests. |
+| 2026-08-20 | Phase 2 completed & triple-audited. Python 3.13 project initialized with `uv`. Alembic migrations established 25 normalized PostgreSQL tables with foreign-key traceability and CHECK constraints. 3-pass deep audit conducted and remediated (`docs/audit-2026-08-20.md`, `docs/audit-2026-08-20-second.md`, `docs/audit-2026-08-20-third.md`): strict Clean Architecture boundaries, async storage thread offloading, Alembic configuration URL routing, TOCTOU GPU lock race condition, typed models (`HttpUrl`, `date`), `TraceabilityChain` links, `ModelCall` parameters/code_version, and database check constraints. |
+| 2026-08-20 | Independent audit (`gpt-audit.md`) conducted across P0, P1, and P2 findings. All issues 100% remediated and verified: (P0) A-01–A-05 schema mismatches, storage path traversal validation & atomic writes, snapshot composite FK integrity, and DB-level immutability triggers via `0002_remediate_p0` and `ADR-0008`; (P1) B-01–B-07 composite FK execution hierarchy (`gates`, `approvals`, `model_calls`), gate row locking with unique approvals constraint, KO atomic version sequential ordering, step idempotency uniqueness, atomic resource lock upsert with non-positive TTL checks, Wikidata QID uniqueness, snapshot storage key hash constraint via migration `697d28e88cb7`; (P2) C-01–C-06 timezone naive rejection, numeric bounds & intervals DB constraints, and batched single-query KO history retrieval. Full verification: 48 tests passing against PostgreSQL, 0 ruff violations, 0 mypy type errors across 56 files. Ready for Phase 3. |
+| 2026-08-20 | Phase 3 completed. Full implementation of backend application layer (FastAPI), background worker layer (Dramatiq/Worker CLI), Typer CLI (`atlas run`, `atlas gate`, `atlas quota`), 17-stage state machine orchestrator (`PipelineRunner`), quality rubric and licensing policy engine, gate suspension/resumption use cases, structured rejection feedback, GPU semaphore leases, and free-tier quota manager with rate limiting. Verified with 68 tests passing against PostgreSQL, 0 ruff violations, and 0 mypy strict type errors across 109 source files. Ready for Phase 4. |

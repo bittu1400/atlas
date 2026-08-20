@@ -4,7 +4,6 @@ from atlas.adapters.persistence.repositories.execution_repository import Executi
 from atlas.adapters.persistence.repositories.focus_repository import FocusRepository
 from atlas.adapters.persistence.repositories.knowledge_repository import (
     KnowledgeRepository,
-    TraceabilityChain,
 )
 from atlas.adapters.persistence.repositories.publishing_repository import PublishingRepository
 from atlas.adapters.persistence.repositories.source_repository import SourceRepository
@@ -15,5 +14,4 @@ __all__ = [
     "KnowledgeRepository",
     "PublishingRepository",
     "SourceRepository",
-    "TraceabilityChain",
 ]

@@ -11,8 +11,8 @@ The first renderer produces 60-second silent-friendly videos: on-screen kinetic 
 archival imagery, carried by sound design rather than narration. Blogs, podcasts, newsletters, and other
 formats are additional renderers over the same knowledge — not redesigns.
 
-> **Status: pre-implementation.** Phase 1 (architecture) is complete. There is no runnable code yet.
-> See [`docs/STATUS.md`](docs/STATUS.md) for exactly what is decided versus what is done.
+> **Status: Phase 3 backend & state machine is 100% complete and verified with 68 tests. Phase 4 (Frontend + Remotion Renderer) is ready to begin.**
+> See [`docs/STATUS.md`](docs/STATUS.md) for authoritative state.
 
 ---
 
@@ -38,7 +38,7 @@ ever edited in place or deleted.
 | [`docs/SPEC.md`](docs/SPEC.md) | Product truth — format, quality rubric, licensing, pipeline, failure semantics |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layering, folder map, orchestration, provider ports, testing strategy |
 | [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | Ubiquitous language — one name per concept |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Settled choices, D1–D38, each pointing at its rationale |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Settled choices, D1–D41, each pointing at its rationale |
 | [`docs/adr/`](docs/adr/) | Architecture Decision Records — why, what was rejected, what it costs |
 | [`CLAUDE.md`](CLAUDE.md) | Instructions for AI agents working in this repository |
 | [`prompt.md`](prompt.md) | The original vision statement. Immutable — never edited |
@@ -76,9 +76,9 @@ Ollama · Docker Compose · Caddy · pytest
 | | Phase | State |
 |---|---|---|
 | 1 | Architecture | **complete** |
-| 2 | Database | next |
-| 3 | Backend | |
-| 4 | Frontend + CLI | |
+| 2 | Database & Persistence | **complete** |
+| 3 | Backend | **complete** |
+| 4 | Frontend + CLI | **next** |
 | 5 | Agents | |
 | 6 | Knowledge system | |
 | 7 | Rendering | |

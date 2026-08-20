@@ -1,9 +1,9 @@
 """Pytest fixtures and configuration for Atlas tests."""
 
+import os
 from collections.abc import AsyncGenerator
 
 import pytest_asyncio
-from atlas.adapters.persistence.tables import Base
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -12,7 +12,9 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
-TEST_DATABASE_URL = "postgresql+asyncpg://postgres@localhost:5432/atlas_test"
+TEST_DATABASE_URL = os.getenv(
+    "ATLAS_TEST_DATABASE_URL", "postgresql+asyncpg://postgres@localhost:5432/atlas_test"
+)
 
 
 @pytest_asyncio.fixture
@@ -23,14 +25,21 @@ async def test_engine() -> AsyncGenerator[AsyncEngine]:
         poolclass=NullPool,
         future=True,
     )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+    # Use alembic for migrations to ensure schema matches production
+    from alembic import command
+    from alembic.config import Config
+
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("sqlalchemy.url", TEST_DATABASE_URL.replace("+asyncpg", "+psycopg"))
+
+    # Downgrade to base to clean up everything including alembic_version
+    command.downgrade(alembic_cfg, "base")
+    # Upgrade to head
+    command.upgrade(alembic_cfg, "head")
 
     yield engine
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    command.downgrade(alembic_cfg, "base")
     await engine.dispose()
 
 

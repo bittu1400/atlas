@@ -32,6 +32,8 @@ every Run that uses it, never mutated afterwards.
 **Active Focus** — A pointer naming the Focus that supplies the default for *newly created* Runs. It is
 a default, not global state: changing it never affects a Run already in flight.
 
+**Focus Snapshot** — Point-in-time capture of research criteria and scoping parameters frozen by value within a Run.
+
 **Scope Mode** — `hard` (never leave the Focus), `soft` (prefer the Focus, allow adjacent graph nodes),
 `exploratory` (Focus as a seed). Default is `soft`.
 
@@ -45,13 +47,19 @@ researching → knowledge_ready → blocked | rejected | published`. An entity w
 **Knowledge Object (KO)** — The canonical, versioned container of everything known about a Topic.
 The single source every renderer reads from. Never edited in place.
 
+**Knowledge Object Status** — Lifecycle states of a Knowledge Object version: `draft` | `verified` | `published` | `archived`.
+
 **Claim** — One atomic statement, typed by **Assertion Type**, carrying confidence and a validity window.
+
+**Claim Status** — Verification state of an atomic Claim: `verified` | `unsupported` | `refuted` | `contested`.
 
 **Assertion Type** — `fact` | `inference` | `opinion` | `contested`. Required on every Claim. A Claim
 whose type is `inference` must name the Claims it was inferred from.
 
 **Evidence** — A specific passage in a specific Source that supports or contradicts a Claim, with a
 locator (page, offset, quote) and a stance of `supports` or `contradicts`.
+
+**Traceability Chain** — Complete 4-tuple provenance tree (`ClaimEvidenceLink`, `Evidence`, `Source`, `Snapshot`) proving physical chain of custody from statement to retrieved bytes.
 
 **Source** — A retrievable document: paper, archive record, government publication, book, official doc.
 Carries a **Source Tier**.
@@ -116,6 +124,10 @@ feedback that regeneration consumes.
 
 **Rejection Feedback** — Typed, targeted criticism (which Beat, which dimension, what is wrong). Plain
 "rejected" is not accepted by the system; feedback is what makes the next attempt better.
+
+**Resource Lock** — Named concurrency lease with expiring TTL (e.g. GPU lease) to coordinate exclusive resource access across workers.
+
+**Idempotency Key** — Unique composite execution key (`run_id:step_name:input_hash`) preventing duplicate side-effects.
 
 **Quality Report** — Scores per rubric dimension plus the deterministic check results, with a pass or
 fail verdict against the Channel's threshold.

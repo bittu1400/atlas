@@ -12,6 +12,11 @@ dependencies = [
     "pydantic>=2.7.0",
     "pydantic-settings>=2.2.0",
     "structlog>=24.1.0",
+    "fastapi>=0.141.1",
+    "uvicorn>=0.52.4",
+    "typer>=0.27.1",
+    "httpx>=0.28.1",
+    "dramatiq>=2.2.0",
 ]
 
 [project.optional-dependencies]
@@ -26,8 +31,11 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[project.scripts]
+atlas = "apps.cli.main:app"
+
 [tool.hatch.build.targets.wheel]
-packages = ["packages/atlas/src/atlas"]
+packages = ["packages/atlas/src/atlas", "apps", "packages/fakes"]
 
 [tool.ruff]
 line-length = 100
@@ -46,7 +54,7 @@ select = [
     "ARG", # flake8-unused-arguments
     "SIM", # flake8-simplify
 ]
-ignore = ["E501"]
+ignore = ["E501", "B008"]
 
 [tool.mypy]
 python_version = "3.13"

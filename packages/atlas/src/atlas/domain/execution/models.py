@@ -10,9 +10,17 @@ As specified in ADR-0001:
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from atlas.domain.focus.models import FocusSnapshot
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class WindowType(StrEnum):
+    """Type of quota window."""
+
+    MINUTE = "minute"
+    DAY = "day"
 
 
 class RunStatus(StrEnum):
@@ -96,6 +104,7 @@ class Run(BaseModel):
     )
     trace_id: str = Field(description="Distributed trace identifier")
     actor_id: str = Field(description="Actor ID who initiated this Run")
+    error: str | None = Field(default=None, description="High-level failure reason if failed")
     created_at: datetime = Field(description="Creation timestamp in UTC")
     updated_at: datetime = Field(description="Last state transition timestamp in UTC")
     completed_at: datetime | None = Field(default=None, description="Completion timestamp in UTC")
@@ -151,6 +160,12 @@ class Approval(BaseModel):
     )
     created_at: datetime = Field(description="Decision timestamp in UTC")
 
+    @model_validator(mode="after")
+    def validate_feedback(self) -> "Approval":
+        if self.decision == ApprovalDecision.REJECTED and self.feedback is None:
+            raise ValueError("Rejection requires structured feedback")
+        return self
+
 
 class ResourceLock(BaseModel):
     """Named resource lease with TTL (e.g. GPU semaphore)."""
@@ -187,6 +202,10 @@ class ModelCall(BaseModel):
     provider: str = Field(description="Provider name (e.g. gemini, ollama)")
     model_id: str = Field(description="Specific model version identifier")
     prompt_version: str = Field(description="Versioned prompt template ID")
+    parameters: dict[str, Any] = Field(
+        default_factory=dict, description="Model parameters (temperature, max_tokens, etc.)"
+    )
+    code_version: str = Field(description="Codebase version / git SHA")
     input_tokens: int = Field(ge=0, description="Input token count")
     output_tokens: int = Field(ge=0, description="Output token count")
     latency_ms: int = Field(ge=0, description="Call latency in milliseconds")
@@ -203,7 +222,7 @@ class QuotaLedgerEntry(BaseModel):
 
     id: str = Field(description="Unique ledger entry ID")
     provider: str = Field(description="Provider identifier")
-    window_type: str = Field(description="Window type ('minute' or 'day')")
+    window_type: WindowType = Field(description="Window type")
     window_start: datetime = Field(description="Window boundary start in UTC")
     tokens_consumed: int = Field(ge=0, description="Tokens consumed in window")
     requests_consumed: int = Field(ge=0, description="Requests consumed in window")

@@ -44,3 +44,18 @@ models/
 .idea/
 .vscode/
 *.log
+
+# Security and common gaps
+*.p12
+*.pfx
+*.crt
+*.db
+*.sqlite3
+Thumbs.db
+venv/
+env/
+.tox/
+.nox/
+core
+*.core
+var/

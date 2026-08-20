@@ -58,6 +58,9 @@ Decisions marked **ADR** have full rationale in `docs/adr/`.
 | D36 | Git | Local repo, conventional commits, no remote yet | |
 | D37 | Time zones | Four clocks: UTC storage, operator `Asia/Kathmandu`, audience per Channel, provider quota reset | **ADR-0007** |
 | D38 | Publishing windows | Seeded policy table with confidence and provenance; blackouts enforced | **ADR-0007**, schema in Phase 2 |
+| D39 | Domain Dependencies | `pydantic` is allowed in the domain layer | Decided as it's a validation/serialization library, not I/O |
+| D40 | Composite Execution Keys | Execution hierarchy (`gates`, `approvals`, `model_calls`) enforces composite FKs `(id, run_id)` | Structurally prevents cross-run execution contamination |
+| D41 | Database Immutability Triggers | PostgreSQL `BEFORE DELETE` and `BEFORE UPDATE` triggers enforce immutability on core knowledge tables | **ADR-0008**, guarantees append-only physically |
 
 ## Deferred, with the seam built
 
