@@ -1,0 +1,23 @@
+{
+  "name": "@atlas/tokens",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./tokens.json": "./tokens.json"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . || true"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "atlas-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @atlas/web dev",
+    "build": "pnpm --filter @atlas/tokens build && pnpm --filter @atlas/renderer build && pnpm --filter @atlas/web build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
