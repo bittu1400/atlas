@@ -126,13 +126,13 @@ class FakeSearch(Search):
         return [
             SearchResultItem(
                 title=f"Primary Research on {query}",
-                url=f"https://openalex.org/W{hashlib.md5(query.encode()).hexdigest()[:8]}",
+                url=f"https://openalex.org/W{hashlib.sha256(query.encode()).hexdigest()[:8]}",
                 snippet=f"Factual historical findings regarding {query}.",
                 source_name="OpenAlex Archive",
             ),
             SearchResultItem(
                 title=f"Archival Records of {query}",
-                url=f"https://smithsonian.edu/records/{hashlib.md5(query.encode()).hexdigest()[:6]}",
+                url=f"https://smithsonian.edu/records/{hashlib.sha256(query.encode()).hexdigest()[:6]}",
                 snippet=f"Primary museum documentation on {query}.",
                 source_name="Smithsonian Institution",
             ),
@@ -154,7 +154,7 @@ class FakeImageSearch(ImageSearch):
     async def search_archival(self, query: str, limit: int = 10) -> list[ImageCandidate]:
         return [
             ImageCandidate(
-                id=f"img_{hashlib.md5(f'{query}_1'.encode()).hexdigest()[:8]}",
+                id=f"img_{hashlib.sha256(f'{query}_1'.encode()).hexdigest()[:8]}",
                 title=f"Archival photograph representing {query}",
                 url=f"https://upload.wikimedia.org/wikipedia/commons/demo_{query}.jpg",
                 license_id="CC-BY-4.0",
@@ -163,7 +163,7 @@ class FakeImageSearch(ImageSearch):
                 preview_url=f"https://upload.wikimedia.org/wikipedia/commons/thumb/demo_{query}.jpg",
             ),
             ImageCandidate(
-                id=f"img_{hashlib.md5(f'{query}_2'.encode()).hexdigest()[:8]}",
+                id=f"img_{hashlib.sha256(f'{query}_2'.encode()).hexdigest()[:8]}",
                 title=f"Public domain artifact from {query}",
                 url=f"https://loc.gov/pictures/demo_{query}.jpg",
                 license_id="Public Domain",

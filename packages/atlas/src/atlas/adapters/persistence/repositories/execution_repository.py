@@ -26,19 +26,47 @@ from atlas.domain.execution.models import (
     RunStatus,
     Step,
     StepStatus,
+    WindowType,
 )
 from atlas.domain.focus.models import Facet, FocusSnapshot, ScopeMode
 from atlas.platform.clock import utc_now
 from atlas.platform.errors import (
     GateAlreadyResolvedError,
     GateNotFoundError,
+    InvalidStateTransitionError,
     ResourceLockHeldError,
     RunNotFoundError,
     StepNotFoundError,
 )
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+
+VALID_RUN_TRANSITIONS: dict[RunStatus, set[RunStatus]] = {
+    RunStatus.PENDING: {RunStatus.RUNNING, RunStatus.ABANDONED, RunStatus.FAILED},
+    RunStatus.RUNNING: {
+        RunStatus.SUSPENDED,
+        RunStatus.COMPLETED,
+        RunStatus.FAILED,
+        RunStatus.REWORKING,
+        RunStatus.ABANDONED,
+    },
+    RunStatus.SUSPENDED: {
+        RunStatus.RUNNING,
+        RunStatus.REWORKING,
+        RunStatus.ABANDONED,
+        RunStatus.FAILED,
+    },
+    RunStatus.REWORKING: {
+        RunStatus.RUNNING,
+        RunStatus.SUSPENDED,
+        RunStatus.ABANDONED,
+        RunStatus.FAILED,
+    },
+    RunStatus.COMPLETED: set(),
+    RunStatus.FAILED: set(),
+    RunStatus.ABANDONED: set(),
+}
 
 
 class ExecutionRepository:
@@ -103,14 +131,27 @@ class ExecutionRepository:
         )
 
     async def update_run_status(
-        self, run_id: str, status: RunStatus, completed_at: datetime | None = None
+        self,
+        run_id: str,
+        status: RunStatus,
+        completed_at: datetime | None = None,
+        error: str | None = None,
     ) -> None:
-        """Transition a Run state."""
+        """Transition a Run state with transition validation."""
         row = await self.session.get(RunTable, run_id)
         if not row:
             raise RunNotFoundError(run_id)
+
+        current_status = RunStatus(row.status)
+        if status != current_status and status not in VALID_RUN_TRANSITIONS.get(
+            current_status, set()
+        ):
+            raise InvalidStateTransitionError(current_status.value, status.value)
+
         row.status = status.value
         row.updated_at = utc_now()
+        if error is not None:
+            row.error = error
         if completed_at:
             row.completed_at = completed_at
         await self.session.flush()
@@ -312,6 +353,24 @@ class ExecutionRepository:
             for r in rows
         ]
 
+    async def list_all_gates(self) -> list[Gate]:
+        """List all Gates (both pending and resolved) ordered by requested_at desc."""
+        stmt = select(GateTable).order_by(GateTable.requested_at.desc())
+        result = await self.session.execute(stmt)
+        rows = result.scalars().all()
+        return [
+            Gate(
+                id=r.id,
+                run_id=r.run_id,
+                step_id=r.step_id,
+                gate_type=GateType(r.gate_type),
+                status=GateStatus(r.status),
+                requested_at=r.requested_at,
+                resolved_at=r.resolved_at,
+            )
+            for r in rows
+        ]
+
     async def record_approval(self, approval: Approval) -> Approval:
         """Record human approval or structured rejection, resolving the Gate."""
         gate_row = await self.session.get(GateTable, approval.gate_id, with_for_update=True)
@@ -482,3 +541,52 @@ class ExecutionRepository:
         self.session.add(row)
         await self.session.flush()
         return entry
+
+    async def get_quota_consumption_summary(self) -> dict[str, dict[str, int]]:
+        """Summarize consumed tokens and requests per provider for active windows."""
+        now = utc_now()
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        minute_start = now - timedelta(minutes=1)
+
+        # Day consumption
+        stmt_day = (
+            select(
+                QuotaLedgerTable.provider,
+                func.sum(QuotaLedgerTable.tokens_consumed).label("total_tokens"),
+                func.sum(QuotaLedgerTable.requests_consumed).label("total_requests"),
+            )
+            .where(
+                QuotaLedgerTable.window_type == WindowType.DAY.value,
+                QuotaLedgerTable.window_start >= day_start,
+            )
+            .group_by(QuotaLedgerTable.provider)
+        )
+        res_day = await self.session.execute(stmt_day)
+
+        # Minute consumption
+        stmt_minute = (
+            select(
+                QuotaLedgerTable.provider,
+                func.sum(QuotaLedgerTable.requests_consumed).label("total_requests"),
+            )
+            .where(
+                QuotaLedgerTable.window_type == WindowType.MINUTE.value,
+                QuotaLedgerTable.window_start >= minute_start,
+            )
+            .group_by(QuotaLedgerTable.provider)
+        )
+        res_minute = await self.session.execute(stmt_minute)
+
+        summary: dict[str, dict[str, int]] = {}
+        for r_day in res_day:
+            summary.setdefault(r_day.provider, {})["daily_tokens"] = int(r_day.total_tokens or 0)
+            summary.setdefault(r_day.provider, {})["daily_requests"] = int(
+                r_day.total_requests or 0
+            )
+
+        for r_min in res_minute:
+            summary.setdefault(r_min.provider, {})["minute_requests"] = int(
+                r_min.total_requests or 0
+            )
+
+        return summary

@@ -434,9 +434,6 @@ class PublishingWindowTable(Base):
         CheckConstraint(
             "day_of_week >= 0 AND day_of_week <= 6", name="pub_windows_day_of_week_check"
         ),
-        CheckConstraint(
-            "local_start_time < local_end_time", name="pub_windows_time_interval_check"
-        ),
         CheckConstraint("rank >= 1", name="pub_windows_rank_check"),
         CheckConstraint(
             "confidence >= 0.0 AND confidence <= 1.0", name="pub_windows_confidence_check"
@@ -453,12 +450,6 @@ class BlackoutRuleTable(Base):
     earliest_allowed_time: Mapped[time] = mapped_column(Time, nullable=False)
     latest_allowed_time: Mapped[time] = mapped_column(Time, nullable=False)
     is_enforced: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-
-    __table_args__ = (
-        CheckConstraint(
-            "earliest_allowed_time < latest_allowed_time", name="blackout_time_interval_check"
-        ),
-    )
 
 
 # ============================================================================
@@ -669,7 +660,7 @@ class ModelCallTable(Base):
         CheckConstraint("latency_ms >= 0", name="model_calls_latency_ms_check"),
         CheckConstraint("cost_usd >= 0.0", name="model_calls_cost_usd_check"),
         ForeignKeyConstraint(
-            ["step_id", "run_id"], ["steps.id", "steps.run_id"], ondelete="SET NULL"
+            ["step_id", "run_id"], ["steps.id", "steps.run_id"], ondelete="RESTRICT"
         ),
     )
 

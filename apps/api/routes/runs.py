@@ -1,11 +1,8 @@
-"""FastAPI Route Handlers for Runs and Steps."""
-
 from atlas.adapters.persistence.repositories.execution_repository import ExecutionRepository
 from atlas.application.pipeline.runner import PipelineRunner
 from atlas.application.usecases.create_run import CreateRunUseCase
 from atlas.application.usecases.get_run_status import GetRunStatusUseCase, ListRunsUseCase
-from atlas.platform.errors import RunNotFoundError
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Query, status
 
 from apps.api.dependencies import (
     get_create_run_use_case,
@@ -13,6 +10,7 @@ from apps.api.dependencies import (
     get_list_runs_use_case,
     get_pipeline_runner,
     get_run_status_use_case,
+    verify_api_key,
 )
 from apps.api.schemas import CreateRunRequest, GateResponse, RunResponse, StepResponse
 
@@ -24,6 +22,7 @@ async def create_run(
     request: CreateRunRequest,
     use_case: CreateRunUseCase = Depends(get_create_run_use_case),
     runner: PipelineRunner = Depends(get_pipeline_runner),
+    _auth: str = Depends(verify_api_key),
 ) -> RunResponse:
     """Create a new pipeline Run and trigger execution."""
     run = await use_case.execute(
@@ -51,8 +50,9 @@ async def create_run(
 
 @router.get("", response_model=list[RunResponse])
 async def list_runs(
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=200, description="Max number of runs to return"),
     use_case: ListRunsUseCase = Depends(get_list_runs_use_case),
+    _auth: str = Depends(verify_api_key),
 ) -> list[RunResponse]:
     """List pipeline Runs."""
     runs = await use_case.execute(limit=limit)
@@ -78,25 +78,23 @@ async def list_runs(
 async def get_run(
     run_id: str,
     use_case: GetRunStatusUseCase = Depends(get_run_status_use_case),
+    _auth: str = Depends(verify_api_key),
 ) -> RunResponse:
     """Fetch status of a specific Run."""
-    try:
-        run = await use_case.execute(run_id)
-        return RunResponse(
-            id=run.id,
-            topic_id=run.topic_id,
-            channel_id=run.channel_id,
-            status=run.status,
-            captured_focus=run.captured_focus.model_dump(mode="json"),
-            trace_id=run.trace_id,
-            actor_id=run.actor_id,
-            error=run.error,
-            created_at=run.created_at,
-            updated_at=run.updated_at,
-            completed_at=run.completed_at,
-        )
-    except RunNotFoundError as err:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=err.message) from err
+    run = await use_case.execute(run_id)
+    return RunResponse(
+        id=run.id,
+        topic_id=run.topic_id,
+        channel_id=run.channel_id,
+        status=run.status,
+        captured_focus=run.captured_focus.model_dump(mode="json"),
+        trace_id=run.trace_id,
+        actor_id=run.actor_id,
+        error=run.error,
+        created_at=run.created_at,
+        updated_at=run.updated_at,
+        completed_at=run.completed_at,
+    )
 
 
 @router.get("/{run_id}/steps", response_model=list[StepResponse])

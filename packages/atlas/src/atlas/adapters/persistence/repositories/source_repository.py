@@ -242,7 +242,7 @@ class SourceRepository:
             created_at=row.created_at,
         )
 
-    async def link_evidence_to_claim(self, link: ClaimEvidenceLink) -> None:
+    async def link_claim_evidence(self, link: ClaimEvidenceLink) -> None:
         """Associate Evidence with a Claim."""
         row = ClaimEvidenceTable(
             claim_id=link.claim_id,
@@ -252,8 +252,6 @@ class SourceRepository:
         )
         self.session.add(row)
         await self.session.flush()
-
-    link_claim_evidence = link_evidence_to_claim
 
     # =========================================================================
     # Impact Index (Claim Usages for Retraction)

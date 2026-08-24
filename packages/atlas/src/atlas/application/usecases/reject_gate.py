@@ -18,7 +18,7 @@ from atlas.domain.execution.models import (
 )
 from atlas.platform.clock import utc_now
 from atlas.platform.errors import GateAlreadyResolvedError, GateNotFoundError
-from atlas.platform.ids import generate_id
+from atlas.platform.ids import generate_approval_id
 from atlas.platform.logging import get_logger
 
 logger = get_logger("usecases.reject_gate")
@@ -50,7 +50,7 @@ class RejectGateUseCase:
 
         now = utc_now()
         approval = Approval(
-            id=generate_id("app"),
+            id=generate_approval_id(),
             gate_id=gate.id,
             run_id=gate.run_id,
             actor_id=actor_id,
@@ -60,7 +60,15 @@ class RejectGateUseCase:
         )
 
         recorded_approval = await self.execution_repo.record_approval(approval)
-        updated_gate = await self.execution_repo.get_gate(gate_id)
+        updated_gate = Gate(
+            id=gate.id,
+            run_id=gate.run_id,
+            step_id=gate.step_id,
+            gate_type=gate.gate_type,
+            status=GateStatus.REJECTED,
+            requested_at=gate.requested_at,
+            resolved_at=now,
+        )
 
         if feedback.action == RejectionAction.ABANDON:
             await self.execution_repo.update_run_status(

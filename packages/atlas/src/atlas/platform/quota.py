@@ -6,6 +6,7 @@ As specified in Invariant 8, SPEC §11, and ADR-0004:
 - Records metered calls to model_calls audit table and quota_ledger.
 """
 
+import threading
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -42,7 +43,12 @@ DEFAULT_PROVIDER_LIMITS: dict[str, dict[str, int]] = {
 
 
 class QuotaManager:
-    """Manages provider rate limits, token buckets, and quota ledger accounting."""
+    """Manages provider rate limits, token buckets, and quota ledger accounting.
+
+    Thread-safe in-memory rate limiting with persistence to PostgreSQL `quota_ledger`.
+    In multi-worker deployments, workers record consumption to `quota_ledger` which
+    acts as the canonical distributed source of truth.
+    """
 
     def __init__(
         self,
@@ -51,6 +57,7 @@ class QuotaManager:
     ) -> None:
         self.execution_repo = execution_repo
         self.provider_limits = provider_limits or DEFAULT_PROVIDER_LIMITS
+        self._lock = threading.Lock()
         # In-memory sliding window counters: {provider: [(timestamp, tokens)]}
         self._minute_calls: dict[str, list[datetime]] = {}
         self._daily_calls: dict[str, list[datetime]] = {}
@@ -67,35 +74,38 @@ class QuotaManager:
         now = utc_now()
         limits = self._get_limits(provider)
 
-        # 1. Check minute window (RPM)
-        minute_ago = now - timedelta(minutes=1)
-        calls = self._minute_calls.setdefault(provider, [])
-        # Prune old calls
-        self._minute_calls[provider] = [t for t in calls if t > minute_ago]
+        with self._lock:
+            # 1. Check minute window (RPM)
+            minute_ago = now - timedelta(minutes=1)
+            calls = self._minute_calls.setdefault(provider, [])
+            # Prune old calls
+            self._minute_calls[provider] = [t for t in calls if t > minute_ago]
 
-        if len(self._minute_calls[provider]) >= limits["rpm"]:
-            logger.warn(
-                "quota.rate_limit_hit", provider=provider, count=len(self._minute_calls[provider])
-            )
-            raise RateLimitExceededError(provider)
+            if len(self._minute_calls[provider]) >= limits["rpm"]:
+                logger.warning(
+                    "quota.rate_limit_hit",
+                    provider=provider,
+                    count=len(self._minute_calls[provider]),
+                )
+                raise RateLimitExceededError(provider)
 
-        # 2. Check daily window (RPD and TPD)
-        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        last_reset = self._daily_reset.get(provider, start_of_day)
-        if last_reset < start_of_day:
-            self._daily_calls[provider] = []
-            self._daily_tokens[provider] = 0
-            self._daily_reset[provider] = start_of_day
+            # 2. Check daily window (RPD and TPD)
+            start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            last_reset = self._daily_reset.get(provider, start_of_day)
+            if last_reset < start_of_day:
+                self._daily_calls[provider] = []
+                self._daily_tokens[provider] = 0
+                self._daily_reset[provider] = start_of_day
 
-        daily_calls = self._daily_calls.setdefault(provider, [])
-        if len(daily_calls) >= limits["rpd"]:
-            logger.error("quota.daily_requests_exhausted", provider=provider)
-            raise QuotaExceededError(provider, "daily requests")
+            daily_calls = self._daily_calls.setdefault(provider, [])
+            if len(daily_calls) >= limits["rpd"]:
+                logger.error("quota.daily_requests_exhausted", provider=provider)
+                raise QuotaExceededError(provider, "daily requests")
 
-        daily_tokens = self._daily_tokens.setdefault(provider, 0)
-        if daily_tokens + estimated_tokens > limits["tpd"]:
-            logger.error("quota.daily_tokens_exhausted", provider=provider)
-            raise QuotaExceededError(provider, "daily tokens")
+            daily_tokens = self._daily_tokens.setdefault(provider, 0)
+            if daily_tokens + estimated_tokens > limits["tpd"]:
+                logger.error("quota.daily_tokens_exhausted", provider=provider)
+                raise QuotaExceededError(provider, "daily tokens")
 
     async def record_invocation(
         self,
@@ -116,11 +126,12 @@ class QuotaManager:
         now = utc_now()
         total_tokens = input_tokens + output_tokens
 
-        # If not cached, update in-memory counters
+        # If not cached, update in-memory counters with lock
         if not cached:
-            self._minute_calls.setdefault(provider, []).append(now)
-            self._daily_calls.setdefault(provider, []).append(now)
-            self._daily_tokens[provider] = self._daily_tokens.get(provider, 0) + total_tokens
+            with self._lock:
+                self._minute_calls.setdefault(provider, []).append(now)
+                self._daily_calls.setdefault(provider, []).append(now)
+                self._daily_tokens[provider] = self._daily_tokens.get(provider, 0) + total_tokens
 
         # Record ModelCall audit row
         model_call = ModelCall(

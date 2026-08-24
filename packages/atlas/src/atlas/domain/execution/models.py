@@ -118,7 +118,7 @@ class Step(BaseModel):
     id: str = Field(description="Unique Step ID")
     run_id: str = Field(description="Associated Run ID")
     step_name: str = Field(description="Name of pipeline stage (e.g. research, claim_extraction)")
-    step_index: int = Field(ge=1, description="Sequential stage order (1..17)")
+    step_index: int = Field(ge=1, description="Sequential stage order (1..18)")
     status: StepStatus = Field(default=StepStatus.PENDING, description="Step status")
     input_hash: str = Field(description="Hash of step inputs for idempotency verification")
     output_artifact_ref: str | None = Field(

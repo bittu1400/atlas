@@ -1,5 +1,3 @@
-"""FastAPI Dependency Injection Providers."""
-
 from collections.abc import AsyncGenerator
 
 from atlas.adapters.fakes.providers import (
@@ -8,11 +6,13 @@ from atlas.adapters.fakes.providers import (
     FakeImageSearch,
     FakeLlm,
     FakeNotifier,
+    FakePublisher,
     FakeQueueBroker,
     FakeRenderer,
     FakeSearch,
     FakeSoundLibrary,
     FakeSourceFetcher,
+    FakeSpeech,
 )
 from atlas.adapters.persistence.database import get_session_manager
 from atlas.adapters.persistence.repositories.execution_repository import ExecutionRepository
@@ -22,6 +22,8 @@ from atlas.adapters.persistence.repositories.publishing_repository import Publis
 from atlas.adapters.persistence.repositories.source_repository import SourceRepository
 from atlas.adapters.storage.local import LocalStorage
 from atlas.application.pipeline.runner import PipelineRunner
+from atlas.application.ports.publish import Publisher
+from atlas.application.ports.speech import Speech
 from atlas.application.ports.storage import Storage
 from atlas.application.usecases.approve_gate import ApproveGateUseCase
 from atlas.application.usecases.create_run import CreateRunUseCase
@@ -34,8 +36,26 @@ from atlas.application.usecases.get_run_status import (
 from atlas.application.usecases.reject_gate import RejectGateUseCase
 from atlas.platform.config import get_settings
 from atlas.platform.quota import QuotaManager
-from fastapi import Depends
+from fastapi import Depends, HTTPException, Security, status
+from fastapi.security import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
+
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def verify_api_key(
+    api_key: str | None = Security(api_key_header),
+) -> str:
+    """Verify incoming API key if authentication is enabled in Settings."""
+    settings = get_settings()
+    if settings.api_auth_enabled and (
+        not api_key or (settings.api_key and api_key != settings.api_key)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized: Invalid or missing API Key",
+        )
+    return api_key or "anonymous"
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession]:
@@ -87,10 +107,20 @@ _fake_source_fetcher = FakeSourceFetcher()
 _fake_image_search = FakeImageSearch()
 _fake_image_gen = FakeImageGenerator()
 _fake_sound_lib = FakeSoundLibrary()
+_fake_publisher = FakePublisher()
+_fake_speech = FakeSpeech()
 
 
 def get_queue_broker() -> FakeQueueBroker:
     return _fake_queue_broker
+
+
+def get_publisher() -> Publisher:
+    return _fake_publisher
+
+
+def get_speech() -> Speech:
+    return _fake_speech
 
 
 def get_pipeline_runner(
@@ -100,6 +130,7 @@ def get_pipeline_runner(
     source_repo: SourceRepository = Depends(get_source_repository),
     publishing_repo: PublishingRepository = Depends(get_publishing_repository),
     storage: Storage = Depends(get_storage),
+    publisher: Publisher = Depends(get_publisher),
 ) -> PipelineRunner:
     quota_mgr = QuotaManager(execution_repo=execution_repo)
     renderer = FakeRenderer(storage=storage)
@@ -121,6 +152,7 @@ def get_pipeline_runner(
         renderer=renderer,
         notifier=_fake_notifier,
         quota_mgr=quota_mgr,
+        publisher=publisher,
     )
 
 

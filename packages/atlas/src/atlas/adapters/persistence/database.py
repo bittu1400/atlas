@@ -1,5 +1,6 @@
 """Database engine, connection lifecycle, and session management."""
 
+import threading
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -67,11 +68,21 @@ class DatabaseSessionManager:
 
 
 _session_manager: DatabaseSessionManager | None = None
+_session_manager_lock = threading.Lock()
 
 
-def get_session_manager() -> DatabaseSessionManager:
-    """Get or create singleton DatabaseSessionManager instance."""
+def get_session_manager(engine: AsyncEngine | None = None) -> DatabaseSessionManager:
+    """Get or create thread-safe singleton DatabaseSessionManager instance."""
     global _session_manager
     if _session_manager is None:
-        _session_manager = DatabaseSessionManager()
+        with _session_manager_lock:
+            if _session_manager is None:
+                _session_manager = DatabaseSessionManager(engine=engine)
     return _session_manager
+
+
+def reset_session_manager() -> None:
+    """Reset the singleton instance (useful for test isolation)."""
+    global _session_manager
+    with _session_manager_lock:
+        _session_manager = None

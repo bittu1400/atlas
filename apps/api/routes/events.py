@@ -1,6 +1,5 @@
-"""Server-Sent Events (SSE) Route Handlers for Real-time Run Updates."""
-
 import asyncio
+import json
 from collections.abc import AsyncGenerator
 
 from atlas.platform.clock import utc_now
@@ -11,10 +10,24 @@ router = APIRouter(prefix="/events", tags=["Realtime Events"])
 
 
 async def event_generator(run_id: str) -> AsyncGenerator[str]:
-    """Generate mock/real SSE events for a specific run."""
-    yield f'data: {{"event": "connected", "run_id": "{run_id}", "timestamp": "{utc_now().isoformat()}"}}\n\n'
+    """Generate mock/real SSE events for a specific run with safe JSON encoding."""
+    connected_data = json.dumps(
+        {
+            "event": "connected",
+            "run_id": run_id,
+            "timestamp": utc_now().isoformat(),
+        }
+    )
+    yield f"data: {connected_data}\n\n"
     await asyncio.sleep(0.01)
-    yield f'data: {{"event": "status", "run_id": "{run_id}", "state": "active"}}\n\n'
+    status_data = json.dumps(
+        {
+            "event": "status",
+            "run_id": run_id,
+            "state": "active",
+        }
+    )
+    yield f"data: {status_data}\n\n"
 
 
 @router.get("/runs/{run_id}")

@@ -1,7 +1,7 @@
 """Pipeline Stage Execution Engine and Handlers.
 
 As specified in SPEC §6, ARCHITECTURE §3, and ADR-0001:
-- State machine executes 17 discrete stages with idempotency checking and checkpointing.
+- State machine executes 18 discrete stages with idempotency checking and checkpointing.
 - Suspension is a database row; worker exits immediately when a gate is reached.
 - Quality gate enforces strict rubric scoring (>= 78 overall, >= 60 per dimension).
 - Remotion render acquires the GPU lease from resource_locks.
@@ -11,6 +11,7 @@ import hashlib
 
 from atlas.application.policies.gate_policy import GatePolicy, PipelineStage
 from atlas.application.policies.license_policy import LicensePolicy
+from atlas.application.policies.quota_policy import RoutingPolicy, TaskKind
 from atlas.application.ports.embedder import Embedder
 from atlas.application.ports.llm import StructuredLlm
 from atlas.application.ports.media import ImageGenerator, ImageSearch, SoundLibrary
@@ -69,8 +70,17 @@ from atlas.domain.script.models import Beat, BeatTiming, CaptionCue, Script, Tim
 from atlas.platform.clock import utc_now
 from atlas.platform.errors import (
     QualityGateFailedError,
+    StepExecutionError,
+    StepNotFoundError,
 )
-from atlas.platform.ids import generate_id
+from atlas.platform.ids import (
+    generate_claim_id,
+    generate_evidence_id,
+    generate_gate_id,
+    generate_id,
+    generate_snapshot_id,
+    generate_source_id,
+)
 from atlas.platform.logging import get_logger
 from atlas.platform.quota import QuotaManager
 
@@ -99,7 +109,7 @@ STAGE_SEQUENCE: list[PipelineStage] = [
 
 
 class PipelineRunner:
-    """Orchestrates the durable, idempotent state machine across all 17 pipeline stages."""
+    """Orchestrates the durable, idempotent state machine across all 18 pipeline stages."""
 
     def __init__(
         self,
@@ -174,7 +184,7 @@ class PipelineRunner:
         logger.info("pipeline.completed_successfully", run_id=run.id)
         await self.notifier.notify(
             "run_completed",
-            f"Run '{run.id}' completed all 17 stages successfully",
+            f"Run '{run.id}' completed all 18 stages successfully",
             {"run_id": run.id},
         )
         return await self.execution_repo.get_run(run_id)
@@ -196,7 +206,7 @@ class PipelineRunner:
             # Ensure step exists in DB
             try:
                 await self.execution_repo.get_step(step_id)
-            except Exception:
+            except StepNotFoundError:
                 await self.execution_repo.create_step(
                     Step(
                         id=step_id,
@@ -261,7 +271,7 @@ class PipelineRunner:
 
             # Create Gate row
             gate = Gate(
-                id=generate_id("gate"),
+                id=generate_gate_id(),
                 run_id=run.id,
                 step_id=step.id,
                 gate_type=gate_type,
@@ -283,30 +293,48 @@ class PipelineRunner:
         )
         await self.execution_repo.create_step(step)
 
-        # 4. Dispatch Stage Handler
-        output_ref = await self._dispatch_stage_handler(run, stage, step)
+        try:
+            # 4. Dispatch Stage Handler
+            output_ref = await self._dispatch_stage_handler(run, stage, step)
 
-        # 5. Checkpoint Step
-        now = utc_now()
-        await self.execution_repo.update_step(
-            step_id=step.id,
-            status=StepStatus.SUCCEEDED,
-            output_artifact_ref=output_ref,
-            completed_at=now,
-        )
-
-        # 6. Record Idempotency Key
-        out_hash = hashlib.sha256((output_ref or "success").encode()).hexdigest()
-        await self.execution_repo.record_idempotency_key(
-            IdempotencyKey(
-                key=idempotency_key_str,
+            # 5. Checkpoint Step
+            now = utc_now()
+            await self.execution_repo.update_step(
                 step_id=step.id,
-                output_hash=out_hash,
-                created_at=now,
+                status=StepStatus.SUCCEEDED,
+                output_artifact_ref=output_ref,
+                completed_at=now,
             )
-        )
 
-        return False, None
+            # 6. Record Idempotency Key
+            out_hash = hashlib.sha256((output_ref or "success").encode()).hexdigest()
+            await self.execution_repo.record_idempotency_key(
+                IdempotencyKey(
+                    key=idempotency_key_str,
+                    step_id=step.id,
+                    output_hash=out_hash,
+                    created_at=now,
+                )
+            )
+
+            return False, None
+        except Exception as exc:
+            now = utc_now()
+            err_msg = str(exc)
+            await self.execution_repo.update_step(
+                step_id=step.id,
+                status=StepStatus.FAILED,
+                error=err_msg,
+                completed_at=now,
+            )
+            await self.execution_repo.update_run_status(
+                run.id,
+                RunStatus.FAILED,
+                completed_at=now,
+                error=err_msg,
+            )
+            logger.error("stage.failed", stage=stage.value, run_id=run.id, error=err_msg)
+            raise StepExecutionError(step_name=stage.value, reason=err_msg) from exc
 
     async def _dispatch_stage_handler(self, run: Run, stage: PipelineStage, step: Step) -> str:
         """Execute domain logic for a specific automated stage."""
@@ -324,7 +352,7 @@ class PipelineRunner:
             blob_key = await self.storage.put(content, mime)
 
             source = Source(
-                id=generate_id("src"),
+                id=generate_source_id(),
                 title=f"Primary Archive for {run.topic_id}",
                 url=url,  # type: ignore[arg-type]
                 source_tier=SourceTier.PRIMARY,
@@ -333,7 +361,7 @@ class PipelineRunner:
             await self.source_repo.save_source(source)
 
             snapshot = Snapshot(
-                id=generate_id("snp"),
+                id=generate_snapshot_id(),
                 source_id=source.id,
                 content_hash=chash,
                 storage_key=blob_key,
@@ -345,13 +373,14 @@ class PipelineRunner:
             return snapshot.id
 
         elif stage == PipelineStage.CLAIM_EXTRACTION:
-            # Metered model call to extract structured claims
-            self.quota_mgr.check_rate_limits("fake")
+            # Metered model call to extract structured claims routed via RoutingPolicy (ADR-0004)
+            route = RoutingPolicy.get_route(TaskKind.CLAIM_EXTRACTION)
+            self.quota_mgr.check_rate_limits(route.provider)
             await self.quota_mgr.record_invocation(
-                provider="fake",
-                model_id="fake-gemini-flash",
+                provider=route.provider,
+                model_id=route.model_id,
                 prompt_version="claim_extraction_v1",
-                parameters={"temperature": 0.2},
+                parameters={"temperature": route.temperature},
                 code_version="phase-3-v1",
                 input_tokens=150,
                 output_tokens=50,
@@ -363,7 +392,7 @@ class PipelineRunner:
             # Persist Claim + Evidence + Link
             source_url = f"https://archive.org/details/{run.topic_id}"
             source = Source(
-                id=generate_id("src"),
+                id=generate_source_id(),
                 title="Research Source",
                 url=source_url,  # type: ignore[arg-type]
                 source_tier=SourceTier.PRIMARY,
@@ -376,7 +405,7 @@ class PipelineRunner:
             blob_key = await self.storage.put(content, "text/plain")
 
             snapshot = Snapshot(
-                id=generate_id("snp"),
+                id=generate_snapshot_id(),
                 source_id=source.id,
                 content_hash=chash,
                 storage_key=blob_key,
@@ -387,7 +416,7 @@ class PipelineRunner:
             await self.source_repo.save_snapshot(snapshot)
 
             evidence = Evidence(
-                id=generate_id("evi"),
+                id=generate_evidence_id(),
                 source_id=source.id,
                 snapshot_id=snapshot.id,
                 locator="page 1",
@@ -399,7 +428,7 @@ class PipelineRunner:
             await self.source_repo.save_evidence(evidence)
 
             claim = Claim(
-                id=generate_id("clm"),
+                id=generate_claim_id(),
                 text=f"Historical origin of {run.topic_id} is documented in primary records.",
                 assertion_type=AssertionType.FACT,
                 confidence=0.98,
@@ -684,4 +713,15 @@ class PipelineRunner:
         elif stage == PipelineStage.PUBLISH:
             return f"publish_ready_{run.id}"
 
-        return "completed"
+        elif stage in {
+            PipelineStage.TOPIC_SELECTION,
+            PipelineStage.KNOWLEDGE_OBJECT,
+            PipelineStage.STORY_ANGLE,
+            PipelineStage.SCRIPT_APPROVAL,
+            PipelineStage.ASSET_SELECTION,
+            PipelineStage.FINAL_APPROVAL,
+        }:
+            # Manual / Hybrid gate stages dispatched directly without suspension
+            return f"gate_passed_{stage.value}"
+
+        raise NotImplementedError(f"No stage handler implemented for stage '{stage.value}'")

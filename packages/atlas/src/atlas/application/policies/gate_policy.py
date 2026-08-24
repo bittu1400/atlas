@@ -12,7 +12,7 @@ from atlas.domain.execution.models import GateType
 
 
 class PipelineStage(StrEnum):
-    """The 17 stages in the Atlas production pipeline (SPEC §6)."""
+    """The 18 stages in the Atlas production pipeline (SPEC §6)."""
 
     IDEA_DISCOVERY = "idea_discovery"  # Stage 1
     TOPIC_SELECTION = "topic_selection"  # Gate 2 (Manual)

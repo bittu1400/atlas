@@ -1,11 +1,10 @@
-"""Worker Task Definitions for Pipeline Execution and Background Maintenance."""
-
 from atlas.adapters.fakes.providers import (
     FakeEmbedder,
     FakeImageGenerator,
     FakeImageSearch,
     FakeLlm,
     FakeNotifier,
+    FakePublisher,
     FakeRenderer,
     FakeSearch,
     FakeSoundLibrary,
@@ -43,6 +42,7 @@ async def execute_pipeline_task(run_id: str) -> None:
 
         quota_mgr = QuotaManager(exec_repo)
         renderer = FakeRenderer(storage)
+        publisher = FakePublisher()
 
         runner = PipelineRunner(
             execution_repo=exec_repo,
@@ -61,6 +61,7 @@ async def execute_pipeline_task(run_id: str) -> None:
             renderer=renderer,
             notifier=FakeNotifier(),
             quota_mgr=quota_mgr,
+            publisher=publisher,
         )
 
         await runner.run_pipeline(run_id)

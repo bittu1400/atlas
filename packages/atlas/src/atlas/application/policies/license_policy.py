@@ -8,11 +8,11 @@ As specified in SPEC §10.1 and Invariant 10:
 
 from typing import Any
 
-from atlas.platform.errors import LicenseIncompatibleError
+from atlas.platform.errors import AiImageUnapprovedError, LicenseIncompatibleError
 
 
 class LicensePolicy:
-    """Enforces license rules for media assets before storyboard inclusion or render."""
+    """Enforces license rules and approval requirements for media assets (Invariants 9 & 10)."""
 
     # Explicitly allowed licenses
     ALLOWED_LICENSES = {
@@ -61,4 +61,11 @@ class LicensePolicy:
                 "License is unknown or unverified; unresolvable licenses are hard blockers",
             )
 
+        return True
+
+    @classmethod
+    def validate_ai_image_approval(cls, asset_id: str, is_human_approved: bool) -> bool:
+        """Enforce Invariant 9: AI-generated imagery always requires explicit human approval."""
+        if not is_human_approved:
+            raise AiImageUnapprovedError(asset_id)
         return True

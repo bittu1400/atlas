@@ -7,14 +7,20 @@ As specified in ADR-0004:
 
 import hashlib
 import json
+import threading
+from collections import OrderedDict
 from typing import Any
 
 
 class ResponseCache:
-    """In-memory and deterministic response cache for LLM outputs."""
+    """Bounded, thread-safe LRU deterministic response cache for LLM outputs."""
 
-    def __init__(self) -> None:
-        self._cache: dict[str, str] = {}
+    def __init__(self, maxsize: int = 1000) -> None:
+        if maxsize <= 0:
+            raise ValueError("maxsize must be greater than 0")
+        self.maxsize = maxsize
+        self._cache: OrderedDict[str, str] = OrderedDict()
+        self._lock = threading.Lock()
 
     @staticmethod
     def compute_cache_key(
@@ -29,13 +35,28 @@ class ResponseCache:
         return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
 
     def get(self, cache_key: str) -> str | None:
-        """Retrieve cached response string if present."""
-        return self._cache.get(cache_key)
+        """Retrieve cached response string if present, marking as recently used."""
+        with self._lock:
+            if cache_key in self._cache:
+                self._cache.move_to_end(cache_key)
+                return self._cache[cache_key]
+            return None
 
     def set(self, cache_key: str, response_content: str) -> None:
-        """Store response in cache."""
-        self._cache[cache_key] = response_content
+        """Store response in cache, evicting oldest entry if capacity is reached."""
+        with self._lock:
+            if cache_key in self._cache:
+                self._cache.move_to_end(cache_key)
+            self._cache[cache_key] = response_content
+            if len(self._cache) > self.maxsize:
+                self._cache.popitem(last=False)
 
     def clear(self) -> None:
         """Clear cache contents."""
-        self._cache.clear()
+        with self._lock:
+            self._cache.clear()
+
+    def __len__(self) -> int:
+        """Return current cache size."""
+        with self._lock:
+            return len(self._cache)

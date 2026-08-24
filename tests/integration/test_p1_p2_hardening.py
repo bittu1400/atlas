@@ -465,7 +465,7 @@ async def test_c02_schema_validation_parity(db_session: AsyncSession) -> None:
                 {"ch": ch, "sk": sk},
             )
 
-    # 3. Invalid publishing window interval (start >= end)
+    # 3. Invalid publishing window (day_of_week > 6 rejected)
     await db_session.execute(
         text(
             """
@@ -480,7 +480,7 @@ async def test_c02_schema_validation_parity(db_session: AsyncSession) -> None:
                 text(
                     """
                     INSERT INTO publishing_windows (id, channel_id, platform, content_format, day_of_week, local_start_time, local_end_time, source)
-                    VALUES ('pw_bad', 'ch_c02', 'youtube', 'vertical', 1, '18:00:00', '09:00:00', 'priors')
+                    VALUES ('pw_bad', 'ch_c02', 'youtube', 'vertical', 7, '18:00:00', '20:00:00', 'priors')
                     """
                 )
             )

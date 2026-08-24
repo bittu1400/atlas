@@ -12,6 +12,7 @@ from datetime import datetime, time
 from enum import StrEnum
 from typing import Any
 
+from atlas.platform.errors import BlackoutWindowViolationError
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -76,6 +77,24 @@ class BlackoutRule(BaseModel):
         default=time(22, 0), description="Latest allowable publish time (22:00)"
     )
     is_enforced: bool = Field(default=True, description="Whether constraint is active")
+
+    def validate_time(self, proposed_time: time) -> None:
+        """Enforce audience-local 22:00-06:00 blackout constraint (SPEC §14)."""
+        if not self.is_enforced:
+            return
+        if self.earliest_allowed_time <= self.latest_allowed_time:
+            if (
+                proposed_time < self.earliest_allowed_time
+                or proposed_time > self.latest_allowed_time
+            ):
+                raise BlackoutWindowViolationError(proposed_time.isoformat())
+        else:
+            # Spans overnight
+            if (
+                proposed_time > self.latest_allowed_time
+                and proposed_time < self.earliest_allowed_time
+            ):
+                raise BlackoutWindowViolationError(proposed_time.isoformat())
 
 
 class PublishSlot(BaseModel):

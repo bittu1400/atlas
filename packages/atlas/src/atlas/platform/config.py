@@ -38,7 +38,28 @@ class Settings(BaseSettings):
         default="var/snapshots", description="Root path for source snapshots"
     )
 
+    # API Security & CORS
+    cors_origins: list[str] = Field(
+        default=[
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173",
+        ],
+        description="Allowed CORS origins",
+    )
+    api_key: str | None = Field(default=None, description="API Key for endpoint authentication")
+    api_auth_enabled: bool = Field(
+        default=False, description="Whether API key authentication is strictly enforced"
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:
+    """Return cached runtime settings instance."""
     return Settings()
+
+
+def clear_settings_cache() -> None:
+    """Clear cached settings instance (for testing and runtime overrides)."""
+    get_settings.cache_clear()
