@@ -3,8 +3,10 @@ import json
 from collections.abc import AsyncGenerator
 
 from atlas.platform.clock import utc_now
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+
+from apps.api.dependencies import verify_api_key
 
 router = APIRouter(prefix="/events", tags=["Realtime Events"])
 
@@ -31,7 +33,10 @@ async def event_generator(run_id: str) -> AsyncGenerator[str]:
 
 
 @router.get("/runs/{run_id}")
-async def stream_run_events(run_id: str) -> StreamingResponse:
+async def stream_run_events(
+    run_id: str,
+    _auth: str = Depends(verify_api_key),
+) -> StreamingResponse:
     """Stream real-time status and step completion events via SSE."""
     return StreamingResponse(
         event_generator(run_id),
@@ -42,3 +47,4 @@ async def stream_run_events(run_id: str) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+

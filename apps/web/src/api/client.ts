@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import {
   RunItem,
   GateItem,
@@ -7,7 +8,8 @@ import {
 } from './types';
 
 const API_BASE = '/api';
-const API_KEY = 'atlas-dev-key'; // Default development API key
+const API_KEY = import.meta.env.VITE_API_KEY || 'atlas-dev-key'; // Default development API key
+const MOCK_API = import.meta.env.VITE_MOCK_API === 'true';
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers || {});
@@ -33,7 +35,8 @@ export const api = {
   getRuns: async (): Promise<RunItem[]> => {
     try {
       return await request<RunItem[]>('/runs');
-    } catch {
+    } catch (e) {
+      if (!(import.meta.env.DEV && MOCK_API)) throw e;
       // Return simulated mock fallback when backend worker is not running in dev
       return [
         {
@@ -97,7 +100,8 @@ export const api = {
   getGates: async (): Promise<GateItem[]> => {
     try {
       return await request<GateItem[]>('/gates');
-    } catch {
+    } catch (e) {
+      if (!(import.meta.env.DEV && MOCK_API)) throw e;
       // Mock pending gate for Rosetta Stone video review
       return [
         {

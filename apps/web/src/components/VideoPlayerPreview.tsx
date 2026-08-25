@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
-import { Player } from '@remotion/player';
+import React, { useState, Suspense, lazy } from 'react';
 import { OriginsComposition, sampleOriginsVideoProps } from '@atlas/renderer';
 import { typography, pacing, AspectRatio } from '@atlas/tokens';
 import { Smartphone, Monitor, Shield } from 'lucide-react';
+
+const Player = lazy(() =>
+  import('@remotion/player').then((mod) => ({ default: mod.Player }))
+);
 
 export const VideoPlayerPreview: React.FC = () => {
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('vertical');
@@ -83,24 +86,32 @@ export const VideoPlayerPreview: React.FC = () => {
             boxShadow: '0 20px 50px rgba(0,0,0,0.9)',
           }}
         >
-          <Player
-            component={OriginsComposition}
-            durationInFrames={pacing.totalFrames}
-            fps={pacing.fps}
-            compositionWidth={config.width}
-            compositionHeight={config.height}
-            style={{
-              width: '100%',
-              height: '100%',
-            }}
-            controls
-            autoPlay={false}
-            loop
-            inputProps={{
-              ...sampleOriginsVideoProps,
-              aspectRatio,
-            }}
-          />
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center w-full h-full text-slate-400 font-mono text-xs">
+                Loading Studio Player...
+              </div>
+            }
+          >
+            <Player
+              component={OriginsComposition as unknown as React.FC<Record<string, unknown>>}
+              durationInFrames={pacing.totalFrames}
+              fps={pacing.fps}
+              compositionWidth={config.width}
+              compositionHeight={config.height}
+              style={{
+                width: '100%',
+                height: '100%',
+              }}
+              controls
+              autoPlay={false}
+              loop
+              inputProps={{
+                ...sampleOriginsVideoProps,
+                aspectRatio,
+              }}
+            />
+          </Suspense>
 
           {/* Safe Margins Visual Guide Overlay */}
           {showSafeAreas && (

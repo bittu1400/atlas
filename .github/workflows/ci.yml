@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: atlas_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        python-version: "3.13"
+        enable-cache: true
+
+    - name: Install Python dependencies
+      run: uv sync
+
+    - name: Lint with Ruff
+      run: uv run ruff check .
+
+    - name: Typecheck with mypy
+      run: uv run mypy .
+
+    - name: Run pytest
+      env:
+        DATABASE_URL: postgresql://postgres:password@localhost:5432/atlas_test
+      run: uv run pytest -q
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    - name: Install pnpm
+      uses: pnpm/action-setup@v3
+      with:
+        version: 9
+
+    - name: Install frontend dependencies
+      run: pnpm install
+
+    - name: Build all packages
+      run: pnpm build
+
+    - name: Verify renderer build
+      run: pnpm --filter @atlas/renderer build

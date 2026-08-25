@@ -85,7 +85,7 @@ Pydantic models for all data crossing a boundary.
 
 **Both:**
 
-- Files stay under ~400 lines. A longer file is a missing module.
+- Files stay under ~400 lines (except `runner.py` orchestrator). A longer file is a missing module.
 - No class over ~200 lines. No function over ~50. If it wants to be bigger, it is two things.
 - Names come from `docs/GLOSSARY.md`. If a concept has no glossary entry, add one before naming it.
 - Comments explain *why*, never *what*. Delete any comment that restates the code.

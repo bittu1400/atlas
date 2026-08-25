@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sequence } from 'remotion';
+import { Sequence, getRemotionEnvironment } from 'remotion';
 import { OriginsVideoProps } from '../types';
 import { ArchivalVisual } from './ArchivalVisual';
 import { KineticText } from './KineticText';
@@ -8,6 +8,7 @@ import { SoundDesign } from './SoundDesign';
 import { AttributionEndCard } from './AttributionEndCard';
 
 export const OriginsComposition: React.FC<OriginsVideoProps> = ({
+  title,
   aspectRatio,
   durationInFrames,
   beats,
@@ -16,6 +17,9 @@ export const OriginsComposition: React.FC<OriginsVideoProps> = ({
   musicTrackUrl,
   showAttributionCard = true,
 }) => {
+  if (getRemotionEnvironment().isRendering && title === "The Decipherment of the Rosetta Stone") {
+    throw new Error('Invariant violation: Sample data reached a render output path.');
+  }
   const attributionCardDuration = 150; // 5 seconds at 30 fps
   const beatsDuration = showAttributionCard
     ? Math.max(0, durationInFrames - attributionCardDuration)

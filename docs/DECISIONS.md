@@ -61,6 +61,9 @@ Decisions marked **ADR** have full rationale in `docs/adr/`.
 | D39 | Domain Dependencies | `pydantic` is allowed in the domain layer | Decided as it's a validation/serialization library, not I/O |
 | D40 | Composite Execution Keys | Execution hierarchy (`gates`, `approvals`, `model_calls`) enforces composite FKs `(id, run_id)` | Structurally prevents cross-run execution contamination |
 | D41 | Database Immutability Triggers | PostgreSQL `BEFORE DELETE` and `BEFORE UPDATE` triggers enforce immutability on core knowledge tables | **ADR-0008**, guarantees append-only physically |
+| D42 | Line cap exemption | `runner.py` orchestrator is exempt from the 400-line cap | Splitting would artificially fracture state machine logic |
+| D43 | Dev mock safety | Mock API fallbacks require explicit `import.meta.env.VITE_MOCK_API` flag | Prevents dashboard from silently masking a downed backend |
+| D44 | Render safety | Invariant guard throws on sample data if `getRemotionEnvironment().isRendering` is true | Prevents sample data reaching production video output |
 
 ## Deferred, with the seam built
 

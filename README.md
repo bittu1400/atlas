@@ -11,7 +11,7 @@ The first renderer produces 60-second silent-friendly videos: on-screen kinetic 
 archival imagery, carried by sound design rather than narration. Blogs, podcasts, newsletters, and other
 formats are additional renderers over the same knowledge — not redesigns.
 
-> **Status: Phase 3 backend & state machine is 100% complete and verified with 68 tests. Phase 4 (Frontend + Remotion Renderer) is ready to begin.**
+> **Status: Phase 3.1 & Phase 4 complete. Verified with 83 tests. Phase 5 (Agents) is ready to begin.**
 > See [`docs/STATUS.md`](docs/STATUS.md) for authoritative state.
 
 ---
@@ -78,8 +78,8 @@ Ollama · Docker Compose · Caddy · pytest
 | 1 | Architecture | **complete** |
 | 2 | Database & Persistence | **complete** |
 | 3 | Backend | **complete** |
-| 4 | Frontend + CLI | **next** |
-| 5 | Agents | |
+| 4 | Frontend + CLI | **complete** |
+| 5 | Agents | **next** |
 | 6 | Knowledge system | |
 | 7 | Rendering | |
 | 8 | Publishing | deferred |
