@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas_password
+      POSTGRES_DB: atlas_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Note: If you want GPU acceleration for Ollama, you will need to add deploy options here.
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uv run uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
+    environment:
+      - ATLAS_DATABASE_URL=postgresql+asyncpg://atlas:atlas_password@postgres:5432/atlas_db
+      - ATLAS_STORAGE_ROOT=/var/atlas/blobs
+      - OLLAMA_URL=http://ollama:11434
+    ports:
+      - "8000:8000"
+    volumes:
+      - atlas_blobs:/var/atlas/blobs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uv run dramatiq apps.worker.tasks
+    environment:
+      - ATLAS_DATABASE_URL=postgresql+asyncpg://atlas:atlas_password@postgres:5432/atlas_db
+      - ATLAS_STORAGE_ROOT=/var/atlas/blobs
+      - OLLAMA_URL=http://ollama:11434
+    volumes:
+      - atlas_blobs:/var/atlas/blobs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  ollama_data:
+  atlas_blobs:
+  caddy_data:
+  caddy_config:

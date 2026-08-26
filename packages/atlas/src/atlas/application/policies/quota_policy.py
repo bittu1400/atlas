@@ -35,6 +35,7 @@ class ModelRoute(BaseModel):
     provider: str = Field(description="Provider name (gemini, ollama, fake)")
     model_id: str = Field(description="Target model ID")
     temperature: float = Field(default=0.7)
+    max_tokens: int | None = Field(default=2048)
 
 
 class RoutingPolicy:
@@ -42,7 +43,7 @@ class RoutingPolicy:
 
     DEFAULT_ROUTES: dict[TaskKind, ModelRoute] = {
         TaskKind.RETRIEVAL: ModelRoute(
-            task=TaskKind.RETRIEVAL, tier=0, provider="fake", model_id="none"
+            task=TaskKind.RETRIEVAL, tier=0, provider="fake", model_id="none", max_tokens=None
         ),
         TaskKind.ENTITY_EXTRACTION: ModelRoute(
             task=TaskKind.ENTITY_EXTRACTION,
@@ -50,6 +51,7 @@ class RoutingPolicy:
             provider="ollama",
             model_id="qwen3:8b",
             temperature=0.2,
+            max_tokens=2048,
         ),
         TaskKind.CLAIM_EXTRACTION: ModelRoute(
             task=TaskKind.CLAIM_EXTRACTION,
@@ -57,6 +59,7 @@ class RoutingPolicy:
             provider="gemini",
             model_id="gemini-2.0-flash",
             temperature=0.2,
+            max_tokens=4096,
         ),
         TaskKind.VERIFICATION: ModelRoute(
             task=TaskKind.VERIFICATION,
@@ -64,6 +67,7 @@ class RoutingPolicy:
             provider="gemini",
             model_id="gemini-2.0-flash",
             temperature=0.0,
+            max_tokens=2048,
         ),
         TaskKind.STORY_ANGLE_GENERATION: ModelRoute(
             task=TaskKind.STORY_ANGLE_GENERATION,
@@ -71,6 +75,7 @@ class RoutingPolicy:
             provider="gemini",
             model_id="gemini-2.0-flash",
             temperature=0.8,
+            max_tokens=2048,
         ),
         TaskKind.SCRIPT_WRITING: ModelRoute(
             task=TaskKind.SCRIPT_WRITING,
@@ -78,9 +83,14 @@ class RoutingPolicy:
             provider="gemini",
             model_id="gemini-2.0-flash",
             temperature=0.7,
+            max_tokens=2048,
         ),
         TaskKind.TIMING_CALCULATION: ModelRoute(
-            task=TaskKind.TIMING_CALCULATION, tier=0, provider="fake", model_id="none"
+            task=TaskKind.TIMING_CALCULATION,
+            tier=0,
+            provider="fake",
+            model_id="none",
+            max_tokens=None,
         ),
         TaskKind.QUALITY_JUDGING: ModelRoute(
             task=TaskKind.QUALITY_JUDGING,
@@ -88,6 +98,7 @@ class RoutingPolicy:
             provider="gemini",
             model_id="gemini-2.0-flash",
             temperature=0.1,
+            max_tokens=2048,
         ),
         TaskKind.IMAGE_GENERATION: ModelRoute(
             task=TaskKind.IMAGE_GENERATION,
@@ -95,6 +106,7 @@ class RoutingPolicy:
             provider="local-sd",
             model_id="sd-turbo",
             temperature=0.0,
+            max_tokens=None,
         ),
     }
 
@@ -109,5 +121,6 @@ class RoutingPolicy:
                 provider="fake",
                 model_id=f"fake-{route.model_id}",
                 temperature=route.temperature,
+                max_tokens=route.max_tokens,
             )
         return route

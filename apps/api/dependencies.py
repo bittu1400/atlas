@@ -1,19 +1,6 @@
 from collections.abc import AsyncGenerator
 
-from atlas.adapters.fakes.providers import (
-    FakeEmbedder,
-    FakeImageGenerator,
-    FakeImageSearch,
-    FakeLlm,
-    FakeNotifier,
-    FakePublisher,
-    FakeQueueBroker,
-    FakeRenderer,
-    FakeSearch,
-    FakeSoundLibrary,
-    FakeSourceFetcher,
-    FakeSpeech,
-)
+from atlas.adapters.container import Container
 from atlas.adapters.persistence.database import get_session_manager
 from atlas.adapters.persistence.repositories.execution_repository import ExecutionRepository
 from atlas.adapters.persistence.repositories.focus_repository import FocusRepository
@@ -23,6 +10,7 @@ from atlas.adapters.persistence.repositories.source_repository import SourceRepo
 from atlas.adapters.storage.local import LocalStorage
 from atlas.application.pipeline.runner import PipelineRunner
 from atlas.application.ports.publish import Publisher
+from atlas.application.ports.queue import QueueBroker
 from atlas.application.ports.speech import Speech
 from atlas.application.ports.storage import Storage
 from atlas.application.usecases.approve_gate import ApproveGateUseCase
@@ -35,7 +23,6 @@ from atlas.application.usecases.get_run_status import (
 )
 from atlas.application.usecases.reject_gate import RejectGateUseCase
 from atlas.platform.config import get_settings
-from atlas.platform.quota import QuotaManager
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -97,83 +84,41 @@ def get_publishing_repository(
     return PublishingRepository(session)
 
 
-# Global fakes singletons for testing / mock pipeline runs
-_fake_queue_broker = FakeQueueBroker()
-_fake_notifier = FakeNotifier()
-_fake_llm = FakeLlm()
-_fake_embedder = FakeEmbedder()
-_fake_search = FakeSearch()
-_fake_source_fetcher = FakeSourceFetcher()
-_fake_image_search = FakeImageSearch()
-_fake_image_gen = FakeImageGenerator()
-_fake_sound_lib = FakeSoundLibrary()
-_fake_publisher = FakePublisher()
-_fake_speech = FakeSpeech()
 
 
-def get_queue_broker() -> FakeQueueBroker:
-    return _fake_queue_broker
 
+def get_queue_broker() -> QueueBroker:
+    # Just a placeholder if we need queue_broker directly
+    return Container().queue_broker
 
 def get_publisher() -> Publisher:
-    return _fake_publisher
-
+    return Container().publisher
 
 def get_speech() -> Speech:
-    return _fake_speech
+    return Container().speech
 
-
-def get_pipeline_runner(
-    execution_repo: ExecutionRepository = Depends(get_execution_repository),
-    knowledge_repo: KnowledgeRepository = Depends(get_knowledge_repository),
-    focus_repo: FocusRepository = Depends(get_focus_repository),
-    source_repo: SourceRepository = Depends(get_source_repository),
-    publishing_repo: PublishingRepository = Depends(get_publishing_repository),
-    storage: Storage = Depends(get_storage),
-    publisher: Publisher = Depends(get_publisher),
-) -> PipelineRunner:
-    quota_mgr = QuotaManager(execution_repo=execution_repo)
-    renderer = FakeRenderer(storage=storage)
-
-    return PipelineRunner(
-        execution_repo=execution_repo,
-        knowledge_repo=knowledge_repo,
-        focus_repo=focus_repo,
-        source_repo=source_repo,
-        publishing_repo=publishing_repo,
-        storage=storage,
-        llm=_fake_llm,
-        embedder=_fake_embedder,
-        search=_fake_search,
-        source_fetcher=_fake_source_fetcher,
-        image_search=_fake_image_search,
-        image_gen=_fake_image_gen,
-        sound_lib=_fake_sound_lib,
-        renderer=renderer,
-        notifier=_fake_notifier,
-        quota_mgr=quota_mgr,
-        publisher=publisher,
-    )
+def get_pipeline_runner(session: AsyncSession = Depends(get_db_session)) -> PipelineRunner:
+    return Container(session).get_pipeline_runner()
 
 
 def get_create_run_use_case(
     execution_repo: ExecutionRepository = Depends(get_execution_repository),
     focus_repo: FocusRepository = Depends(get_focus_repository),
-    queue_broker: FakeQueueBroker = Depends(get_queue_broker),
+    queue_broker: QueueBroker = Depends(get_queue_broker),
 ) -> CreateRunUseCase:
     return CreateRunUseCase(execution_repo, focus_repo, queue_broker)
 
 
 def get_approve_gate_use_case(
     execution_repo: ExecutionRepository = Depends(get_execution_repository),
-    queue_broker: FakeQueueBroker = Depends(get_queue_broker),
+    queue_broker: QueueBroker = Depends(get_queue_broker),
 ) -> ApproveGateUseCase:
     return ApproveGateUseCase(execution_repo, queue_broker)
 
 
 def get_reject_gate_use_case(
     execution_repo: ExecutionRepository = Depends(get_execution_repository),
-    queue_broker: FakeQueueBroker = Depends(get_queue_broker),
+    queue_broker: QueueBroker = Depends(get_queue_broker),
 ) -> RejectGateUseCase:
     return RejectGateUseCase(execution_repo, queue_broker)
 

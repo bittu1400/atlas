@@ -1,0 +1,11 @@
+# Caddyfile for reverse proxying to Atlas API
+
+:80 {
+    # Proxy all API requests to the api container
+    reverse_proxy api:8000
+    
+    # You can configure TLS and domain names here for production:
+    # example.com {
+    #     reverse_proxy api:8000
+    # }
+}

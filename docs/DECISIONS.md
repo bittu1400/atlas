@@ -64,6 +64,8 @@ Decisions marked **ADR** have full rationale in `docs/adr/`.
 | D42 | Line cap exemption | `runner.py` orchestrator is exempt from the 400-line cap | Splitting would artificially fracture state machine logic |
 | D43 | Dev mock safety | Mock API fallbacks require explicit `import.meta.env.VITE_MOCK_API` flag | Prevents dashboard from silently masking a downed backend |
 | D44 | Render safety | Invariant guard throws on sample data if `getRemotionEnvironment().isRendering` is true | Prevents sample data reaching production video output |
+| D45 | Production DI Container | Replace hardcoded `Fake*` instantiations in API and Worker entrypoints with a unified DI container | Ensures "Zero Fakes in Production" requirement is structurally enforced |
+| D46 | NoOpSpeech Adapter | Use a no-op implementation for the `Speech` port rather than a test Fake in production | Enforces zero fakes while preserving the unimplemented architectural seam (D3) |
 
 ## Deferred, with the seam built
 

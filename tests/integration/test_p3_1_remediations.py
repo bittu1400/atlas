@@ -100,6 +100,10 @@ def api_client(db_session: AsyncSession, test_storage: LocalStorage) -> AsyncCli
     app.dependency_overrides[get_source_repository] = lambda: SourceRepository(db_session)
     app.dependency_overrides[get_publishing_repository] = lambda: PublishingRepository(db_session)
     app.dependency_overrides[get_storage] = lambda: test_storage
+    from atlas.adapters.fakes.providers import FakeQueueBroker
+
+    from apps.api.dependencies import get_queue_broker
+    app.dependency_overrides[get_queue_broker] = lambda: FakeQueueBroker()
 
     transport = ASGITransport(app=app)
     return AsyncClient(transport=transport, base_url="http://testserver")
@@ -290,17 +294,20 @@ async def test_runner_stage_failure_handling(db_session: AsyncSession) -> None:
     pub_repo = PublishingRepository(db_session)
     quota_mgr = QuotaManager(exec_repo)
 
-    class FailingSearch:
-        async def search(self, *_args: Any, **_kwargs: Any) -> list[Any]:
-            raise ConnectionError("Upstream search provider down")
+    class FailingLlm:
+        async def extract(self, *_args: Any, **_kwargs: Any) -> Any:
+            raise ConnectionError("Upstream LLM provider down")
+
+        async def complete(self, *_args: Any, **_kwargs: Any) -> Any:
+            raise ConnectionError("Upstream LLM provider down")
 
     from atlas.adapters.fakes.providers import (
         FakeEmbedder,
         FakeImageGenerator,
         FakeImageSearch,
-        FakeLlm,
         FakeNotifier,
         FakeRenderer,
+        FakeSearch,
         FakeSoundLibrary,
         FakeSourceFetcher,
     )
@@ -312,9 +319,9 @@ async def test_runner_stage_failure_handling(db_session: AsyncSession) -> None:
         source_repo=src_repo,
         publishing_repo=pub_repo,
         storage=storage,
-        llm=FakeLlm(),
+        llm=FailingLlm(),
         embedder=FakeEmbedder(),
-        search=FailingSearch(),  # Will fail on IDEA_DISCOVERY stage 1
+        search=FakeSearch(),
         source_fetcher=FakeSourceFetcher(),
         image_search=FakeImageSearch(),
         image_gen=FakeImageGenerator(),
@@ -352,16 +359,16 @@ async def test_runner_stage_failure_handling(db_session: AsyncSession) -> None:
         await runner.run_pipeline(run_id)
 
     assert exc_info.value.step_name == PipelineStage.IDEA_DISCOVERY.value
-    assert "Upstream search provider down" in exc_info.value.reason
+    assert "Upstream LLM provider down" in exc_info.value.reason
 
     # Verify run and step state in database
     failed_run = await exec_repo.get_run(run_id)
     assert failed_run.status == RunStatus.FAILED
-    assert "Upstream search provider down" in (failed_run.error or "")
+    assert "Upstream LLM provider down" in (failed_run.error or "")
 
     failed_step = await exec_repo.get_step(f"step_{run_id}_idea_discovery")
     assert failed_step.status.value == "failed"
-    assert "Upstream search provider down" in (failed_step.error or "")
+    assert "Upstream LLM provider down" in (failed_step.error or "")
 
 
 @pytest.mark.asyncio

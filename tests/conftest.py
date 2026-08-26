@@ -1,4 +1,7 @@
-"""Pytest fixtures and configuration for Atlas tests."""
+import dramatiq
+from dramatiq.brokers.stub import StubBroker
+
+dramatiq.set_broker(StubBroker())
 
 import os
 from collections.abc import AsyncGenerator

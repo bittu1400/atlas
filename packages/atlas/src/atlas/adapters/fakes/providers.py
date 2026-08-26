@@ -87,6 +87,246 @@ class FakeLlm(Llm, StructuredLlm):
 
     def _generate_fixture_for_schema(self, schema: type[T], _prompt: str) -> Any:
         schema_name = schema.__name__
+        if "ExtractionPayload" in schema_name:
+            return {
+                "claims": [
+                    {
+                        "text": "The earliest documented chess rules date to 6th-century India.",
+                        "assertion_type": "fact",
+                        "confidence": 0.98,
+                    },
+                    {
+                        "text": "Chaturanga spread to Persia by the late Sasanian Empire.",
+                        "assertion_type": "fact",
+                        "confidence": 0.95,
+                    },
+                ],
+                "evidence": [
+                    {
+                        "locator": "Section 1, Paragraph 2",
+                        "quote": "Historical records attest that Chaturanga was played in the Gupta court.",
+                        "stance": "supports",
+                        "confidence": 1.0,
+                    },
+                    {
+                        "locator": "Section 3, Paragraph 1",
+                        "quote": "Persian treatises from the 6th century record the arrival of the game from India.",
+                        "stance": "supports",
+                        "confidence": 1.0,
+                    },
+                ],
+                "links": [
+                    {
+                        "claim_index": 0,
+                        "evidence_index": 0,
+                        "stance": "supports",
+                        "notes": "Direct confirmation",
+                    },
+                    {
+                        "claim_index": 1,
+                        "evidence_index": 1,
+                        "stance": "supports",
+                        "notes": "Persian translation",
+                    },
+                ],
+            }
+        if "Verification" in schema_name:
+            return {
+                "verifications": [
+                    {
+                        "status": "verified",
+                        "stance": "supports",
+                        "rationale": "Direct primary record verification.",
+                        "confidence": 1.0,
+                    }
+                ],
+                "status": "verified",
+                "stance": "supports",
+                "rationale": "Direct primary record verification.",
+                "confidence": 1.0,
+            }
+        if "TopicDiscoveryPayload" in schema_name:
+            return {
+                "topics": [
+                    {
+                        "title": "The Origin of Modern Chess",
+                        "rationale": "Deep archival records in Indian and Persian manuscripts.",
+                        "search_queries": [
+                            "chaturanga 6th century india",
+                            "persian shatranj manuscripts",
+                        ],
+                        "estimated_novelty": 0.85,
+                    }
+                ]
+            }
+        if "StoryAnglePayload" in schema_name:
+            return {
+                "angles": [
+                    {
+                        "name": "The Court of Guptas",
+                        "hook": "Before it was chess, it was a 6th-century military simulator.",
+                        "narrative_thesis": "How Chaturanga conquered the ancient trade routes.",
+                        "score": 92.0,
+                    }
+                ],
+                "selected_angle": "The Court of Guptas",
+                "selection_reason": "Strongest narrative arc with rich archival imagery.",
+            }
+        if "ScriptPayload" in schema_name:
+            return {
+                "beats": [
+                    {
+                        "beat_index": 1,
+                        "text": "Sixth century India in the Gupta court.",
+                        "claim_ids": ["claim_01"],
+                        "duration_seconds": 4.0,
+                        "visual_cue": "Ancient Indian manuscript",
+                    },
+                    {
+                        "beat_index": 2,
+                        "text": "A tactical battlefield upon an eight by eight grid.",
+                        "claim_ids": ["claim_01"],
+                        "duration_seconds": 4.0,
+                        "visual_cue": "Wooden carved game board",
+                    },
+                    {
+                        "beat_index": 3,
+                        "text": "Four imperial divisions assembled for strategic combat.",
+                        "claim_ids": ["claim_01"],
+                        "duration_seconds": 4.0,
+                        "visual_cue": "Gupta military carving",
+                    },
+                    {
+                        "beat_index": 4,
+                        "text": "Infantry, cavalry, war elephants, and royal chariots.",
+                        "claim_ids": ["claim_01"],
+                        "duration_seconds": 4.0,
+                        "visual_cue": "War elephant depiction",
+                    },
+                    {
+                        "beat_index": 5,
+                        "text": "The scholars of Sanskrit named this simulator Chaturanga.",
+                        "claim_ids": ["claim_01"],
+                        "duration_seconds": 4.0,
+                        "visual_cue": "Sanskrit text scroll",
+                    },
+                    {
+                        "beat_index": 6,
+                        "text": "Merchant caravans carried the game along ancient trade routes.",
+                        "claim_ids": ["claim_01"],
+                        "duration_seconds": 4.0,
+                        "visual_cue": "Silk Road map illustration",
+                    },
+                    {
+                        "beat_index": 7,
+                        "text": "Journeying westward across mountain passes into Persia.",
+                        "claim_ids": ["claim_01"],
+                        "duration_seconds": 4.0,
+                        "visual_cue": "Sasanian palace relief",
+                    },
+                    {
+                        "beat_index": 8,
+                        "text": "In royal Persian courts, it was crowned as Shatranj.",
+                        "claim_ids": ["claim_01"],
+                        "duration_seconds": 4.0,
+                        "visual_cue": "Persian miniature painting",
+                    },
+                    {
+                        "beat_index": 9,
+                        "text": "When the monarch was trapped, they shouted Shah Mat.",
+                        "claim_ids": ["claim_01"],
+                        "duration_seconds": 4.0,
+                        "visual_cue": "Shah miniature artwork",
+                    },
+                    {
+                        "beat_index": 10,
+                        "text": "The king is helpless and left without escape.",
+                        "claim_ids": ["claim_01"],
+                        "duration_seconds": 4.0,
+                        "visual_cue": "Ivory chess king piece",
+                    },
+                    {
+                        "beat_index": 11,
+                        "text": "Traveling through Moorish Spain into medieval Europe.",
+                        "claim_ids": ["claim_01"],
+                        "duration_seconds": 4.0,
+                        "visual_cue": "Al-Andalus manuscript",
+                    },
+                    {
+                        "beat_index": 12,
+                        "text": "Scribes and monks copied the complex tactical manuscripts.",
+                        "claim_ids": ["claim_01"],
+                        "duration_seconds": 4.0,
+                        "visual_cue": "Medieval scriptorium",
+                    },
+                    {
+                        "beat_index": 13,
+                        "text": "In the Renaissance, the counselor became the powerful queen.",
+                        "claim_ids": ["claim_01"],
+                        "duration_seconds": 4.0,
+                        "visual_cue": "Renaissance chess painting",
+                    },
+                    {
+                        "beat_index": 14,
+                        "text": "Transforming an ancient war game into modern international chess.",
+                        "claim_ids": ["claim_01"],
+                        "duration_seconds": 4.0,
+                        "visual_cue": "Modern carved pieces",
+                    },
+                    {
+                        "beat_index": 15,
+                        "text": "Preserving fifteen centuries of pure tactical human thought.",
+                        "claim_ids": ["claim_01"],
+                        "duration_seconds": 4.0,
+                        "visual_cue": "End archival photograph",
+                    },
+                ]
+            }
+        if "QualityJudgePayload" in schema_name:
+            return {
+                "scores": [
+                    {
+                        "dimension": "sourcing_integrity",
+                        "score": 95.0,
+                        "reason": "All claims backed by Tier 0 evidence.",
+                    },
+                    {
+                        "dimension": "hook_strength",
+                        "score": 88.0,
+                        "reason": "Engaging initial beat.",
+                    },
+                    {
+                        "dimension": "narrative_arc",
+                        "score": 85.0,
+                        "reason": "Cohesive historical progression.",
+                    },
+                    {
+                        "dimension": "language_craft",
+                        "score": 90.0,
+                        "reason": "Kinetic, concise sentences.",
+                    },
+                    {
+                        "dimension": "factual_density",
+                        "score": 84.0,
+                        "reason": "High factual content without clutter.",
+                    },
+                    {
+                        "dimension": "novelty",
+                        "score": 86.0,
+                        "reason": "Non-obvious historical focus.",
+                    },
+                    {
+                        "dimension": "visual_coherence",
+                        "score": 88.0,
+                        "reason": "Consistent archival aesthetic cues.",
+                    },
+                    {
+                        "dimension": "technical_compliance",
+                        "score": 100.0,
+                        "reason": "Strict compliance with 60s pacing.",
+                    },
+                ]
+            }
         if "QualityReport" in schema_name or "DimensionScore" in schema_name:
             return {
                 "sourcing_integrity": 95.0,

@@ -40,6 +40,22 @@ class UnsupportedClaimError(KnowledgeError):
     """Raised when an unsupported claim without evidence is placed on a publication path."""
 
 
+class ClaimNotFoundError(KnowledgeError):
+    """Raised when a referenced Claim does not exist."""
+
+    def __init__(self, claim_id: str) -> None:
+        super().__init__(f"Claim '{claim_id}' not found")
+        self.claim_id = claim_id
+
+
+class EvidenceNotFoundError(KnowledgeError):
+    """Raised when a referenced Evidence does not exist."""
+
+    def __init__(self, evidence_id: str) -> None:
+        super().__init__(f"Evidence '{evidence_id}' not found")
+        self.evidence_id = evidence_id
+
+
 class SourceNotFoundError(KnowledgeError):
     """Raised when a referenced Source does not exist."""
 

@@ -47,6 +47,46 @@ def api_client(db_session: AsyncSession, test_storage: LocalStorage) -> AsyncCli
     app.dependency_overrides[get_source_repository] = lambda: SourceRepository(db_session)
     app.dependency_overrides[get_publishing_repository] = lambda: PublishingRepository(db_session)
     app.dependency_overrides[get_storage] = lambda: test_storage
+    from atlas.adapters.fakes.providers import (
+        FakeEmbedder,
+        FakeImageGenerator,
+        FakeImageSearch,
+        FakeLlm,
+        FakeNotifier,
+        FakePublisher,
+        FakeQueueBroker,
+        FakeRenderer,
+        FakeSearch,
+        FakeSoundLibrary,
+        FakeSourceFetcher,
+    )
+    from atlas.application.pipeline.runner import PipelineRunner
+    from atlas.platform.quota import QuotaManager
+
+    from apps.api.dependencies import get_pipeline_runner, get_queue_broker
+    app.dependency_overrides[get_queue_broker] = lambda: FakeQueueBroker()
+
+    def override_get_pipeline_runner():
+        return PipelineRunner(
+            execution_repo=ExecutionRepository(db_session),
+            knowledge_repo=KnowledgeRepository(db_session),
+            focus_repo=FocusRepository(db_session),
+            source_repo=SourceRepository(db_session),
+            publishing_repo=PublishingRepository(db_session),
+            storage=test_storage,
+            llm=FakeLlm(),
+            embedder=FakeEmbedder(),
+            search=FakeSearch(),
+            source_fetcher=FakeSourceFetcher(),
+            image_search=FakeImageSearch(),
+            image_gen=FakeImageGenerator(),
+            sound_lib=FakeSoundLibrary(),
+            renderer=FakeRenderer(test_storage),
+            notifier=FakeNotifier(),
+            quota_mgr=QuotaManager(ExecutionRepository(db_session)),
+            publisher=FakePublisher()
+        )
+    app.dependency_overrides[get_pipeline_runner] = override_get_pipeline_runner
 
     transport = ASGITransport(app=app)
     return AsyncClient(transport=transport, base_url="http://test")

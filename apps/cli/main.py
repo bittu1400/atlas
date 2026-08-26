@@ -10,26 +10,10 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import typer
-from atlas.adapters.fakes.providers import (
-    FakeEmbedder,
-    FakeImageGenerator,
-    FakeImageSearch,
-    FakeLlm,
-    FakeNotifier,
-    FakePublisher,
-    FakeQueueBroker,
-    FakeRenderer,
-    FakeSearch,
-    FakeSoundLibrary,
-    FakeSourceFetcher,
-)
+from atlas.adapters.container import Container
 from atlas.adapters.persistence.database import get_session_manager, reset_session_manager
 from atlas.adapters.persistence.repositories.execution_repository import ExecutionRepository
 from atlas.adapters.persistence.repositories.focus_repository import FocusRepository
-from atlas.adapters.persistence.repositories.knowledge_repository import KnowledgeRepository
-from atlas.adapters.persistence.repositories.publishing_repository import PublishingRepository
-from atlas.adapters.persistence.repositories.source_repository import SourceRepository
-from atlas.adapters.storage.local import LocalStorage
 from atlas.application.pipeline.runner import PipelineRunner
 from atlas.application.usecases.approve_gate import ApproveGateUseCase
 from atlas.application.usecases.create_run import CreateRunUseCase
@@ -41,8 +25,6 @@ from atlas.application.usecases.get_run_status import (
 )
 from atlas.application.usecases.reject_gate import RejectGateUseCase
 from atlas.domain.execution.models import RejectionAction, RejectionFeedback
-from atlas.platform.config import get_settings
-from atlas.platform.quota import QuotaManager
 from rich.console import Console
 from rich.table import Table
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,43 +47,15 @@ app.add_typer(quota_app)
 console = Console()
 
 
+
+
+
 def _build_runner_and_repos(
     session: AsyncSession,
 ) -> tuple[PipelineRunner, ExecutionRepository, FocusRepository]:
     """Helper to build repositories and pipeline runner on an active managed session."""
-    settings = get_settings()
-    storage = LocalStorage(root_dir=settings.storage_root)
-
-    exec_repo = ExecutionRepository(session)
-    know_repo = KnowledgeRepository(session)
-    focus_repo = FocusRepository(session)
-    src_repo = SourceRepository(session)
-    pub_repo = PublishingRepository(session)
-
-    quota_mgr = QuotaManager(exec_repo)
-    renderer = FakeRenderer(storage)
-    publisher = FakePublisher()
-
-    runner = PipelineRunner(
-        execution_repo=exec_repo,
-        knowledge_repo=know_repo,
-        focus_repo=focus_repo,
-        source_repo=src_repo,
-        publishing_repo=pub_repo,
-        storage=storage,
-        llm=FakeLlm(),
-        embedder=FakeEmbedder(),
-        search=FakeSearch(),
-        source_fetcher=FakeSourceFetcher(),
-        image_search=FakeImageSearch(),
-        image_gen=FakeImageGenerator(),
-        sound_lib=FakeSoundLibrary(),
-        renderer=renderer,
-        notifier=FakeNotifier(),
-        quota_mgr=quota_mgr,
-        publisher=publisher,
-    )
-    return runner, exec_repo, focus_repo
+    container = Container(session)
+    return container.get_pipeline_runner(), container.execution_repo, container.focus_repo
 
 
 @asynccontextmanager
@@ -136,7 +90,7 @@ def create_run_cmd(
 
     async def _run() -> None:
         async with _managed_cli_context() as (runner, exec_repo, focus_repo):
-            queue_broker = FakeQueueBroker()
+            queue_broker = Container().queue_broker
             use_case = CreateRunUseCase(exec_repo, focus_repo, queue_broker)
 
             run = await use_case.execute(
@@ -290,7 +244,7 @@ def approve_gate_cmd(
 
     async def _run() -> None:
         async with _managed_cli_context() as (runner, exec_repo, _):
-            queue_broker = FakeQueueBroker()
+            queue_broker = Container().queue_broker
             use_case = ApproveGateUseCase(exec_repo, queue_broker)
 
             updated_gate, approval = await use_case.execute(gate_id=gate_id, actor_id=actor_id)
@@ -325,7 +279,7 @@ def reject_gate_cmd(
 
     async def _run() -> None:
         async with _managed_cli_context() as (runner, exec_repo, _):
-            queue_broker = FakeQueueBroker()
+            queue_broker = Container().queue_broker
             use_case = RejectGateUseCase(exec_repo, queue_broker)
 
             feedback = RejectionFeedback(
@@ -383,6 +337,49 @@ def quota_status_cmd() -> None:
 
     asyncio.run(_run())
 
+# =============================================================================
+# Deployment Commands
+# =============================================================================
 
+import os
+import subprocess
+
+
+@app.command("backup")
+def backup_cmd(
+    output_file: str = typer.Option("atlas_backup.tar.gz", help="Output backup file"),
+) -> None:
+    """Backup Postgres database and blobs."""
+    console.print(f"[bold green]Starting backup to {output_file}...[/bold green]")
+    try:
+        # Dump DB
+        db_url = os.getenv("ATLAS_DATABASE_URL", "postgresql://atlas:atlas_password@localhost:5432/atlas_db")
+        # Strip +asyncpg if present
+        sync_db_url = db_url.replace("+asyncpg", "")
+        subprocess.run(["pg_dump", sync_db_url, "-F", "c", "-f", "/tmp/db_dump.custom"], check=True)
+        # Tar blobs + DB dump
+        subprocess.run(["tar", "-czf", output_file, "-C", "/var/atlas", "blobs", "-C", "/tmp", "db_dump.custom"], check=True)
+        console.print("[bold green]Backup complete![/bold green]")
+    except subprocess.CalledProcessError as e:
+        console.print(f"[bold red]Backup failed: {e}[/bold red]")
+
+
+@app.command("restore")
+def restore_cmd(
+    input_file: str = typer.Argument(..., help="Input backup file to restore from"),
+) -> None:
+    """Restore Postgres database and blobs from backup."""
+    console.print(f"[bold yellow]Starting restore from {input_file}...[/bold yellow]")
+    try:
+        # Untar
+        subprocess.run(["tar", "-xzf", input_file, "-C", "/tmp"], check=True)
+        subprocess.run(["cp", "-r", "/tmp/blobs", "/var/atlas/"], check=True)
+        # Restore DB
+        db_url = os.getenv("ATLAS_DATABASE_URL", "postgresql://atlas:atlas_password@localhost:5432/atlas_db")
+        sync_db_url = db_url.replace("+asyncpg", "")
+        subprocess.run(["pg_restore", "-d", sync_db_url, "-1", "/tmp/db_dump.custom"], check=True)
+        console.print("[bold green]Restore complete![/bold green]")
+    except subprocess.CalledProcessError as e:
+        console.print(f"[bold red]Restore failed: {e}[/bold red]")
 if __name__ == "__main__":
     app()
