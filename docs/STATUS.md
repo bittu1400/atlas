@@ -94,8 +94,8 @@ Work only the operator can do.
 
 | Action | Needed by | Notes |
 |---|---|---|
-| Obtain a **Google AI Studio API key** | Phase 5 | Free tier API access — see ADR-0004 |
-| `ollama pull qwen3:8b` and `ollama pull nomic-embed-text` | Phase 5 | Tier 1 local models |
+| ~~Obtain **API keys** (Gemini, Freesound)~~ | Phase 5, 7 | Added to `.env` |
+| ~~Pull local models (`qwen3:8b`, `nomic-embed-text`)~~ | Phase 5 | Downloaded via Ollama |
 | Confirm the GitHub repo's **visibility** | now | Strategy and ADRs in git |
 | Decide **backup and restore** | before first publication | Irreplaceable knowledge graph |
 
@@ -140,3 +140,4 @@ Recorded in SPEC §16. Repeated here with the phase that forces the answer.
 | 2026-08-26 | Phase 5 (Step 3) completed. Implemented `VerificationAgent`, `ScriptAgent`, and `JudgeAgent`. Wrote real concrete adapters for `GeminiLlm` (Tier 2) and `OllamaLlm` (Tier 1). Integrated everything into `runner.py` pipeline (FACT_VERIFICATION, SCRIPT_GENERATION, TIMING_PLAN, QUALITY_CHECK). Verified with 98 unit tests passing, 0 lint/mypy errors. Phase 5 complete. |
 | 2026-08-26 | Phase 6 Planning and Audit completed. A comprehensive gap analysis of the codebase versus the 18-stage pipeline revealed 5 crucial omissions in the initial production plan (e.g., missing DramatiqQueueBroker adapter, NoOpSpeech for the speech seam, and TopicDiscoveryAgent, plus DI container rewiring for FastApi/Dramatiq worker). Plan updated and readied for execution. |
 | 2026-08-26 | Phase 6 (Production Integration) completed. Built `WikimediaCommonsSearch`, `InternetArchiveSearch`, `CompositeImageSearch`, `ImageDownloader`, `LocalStableDiffusionGenerator`, and `OllamaEmbedder` for archival retrieval (6A). Implemented `FreesoundLibrary`, `KeystrokeSampler`, and `AudioCompositor` via FFmpeg (6B). Replaced pipeline stubs with `TopicDiscoveryAgent`, `StoryboardAgent` (cosine similarity beat-pairing), and `SoundDesignAgent` (6C). Integrated headless `RemotionRenderer` with dummy generation script and FFmpeg audio muxing (6D). Built mock `YouTubePublisher`, `ThumbnailGenerator`, and `PublishScheduler` enforcing the 22:00-06:00 blackout rule (6E). Stripped all `Fake*` adapters from the API, Worker, and CLI entrypoints using a centralized dependency injection `Container`. Overrode `get_queue_broker` and `get_pipeline_runner` in integration tests to ensure tests run deterministically offline. Added deployment configurations (`docker-compose.yml`, `Caddyfile`) and `atlas backup` / `atlas restore` commands wrapping `pg_dump` and `tar` (6F). Verified 98/98 tests passing. Atlas is now production-ready. The actual execution of the pipeline (producing a video) will commence next session. |
+| 2026-08-26 | Pre-Phase 7 Environment Preparation. Verified operator actions. `GEMINI_API_KEY` was active. `FREESOUND_API_KEY` obtained via Freesound API apply flow and added to `.env`. Booted local Ollama server and successfully pulled Tier 1 fallback LLM (`qwen3:8b`) and embedding model (`nomic-embed-text`). Verified all configuration dependencies for the end-to-end pipeline run are complete. Phase 7 execution ready to begin next session. |
