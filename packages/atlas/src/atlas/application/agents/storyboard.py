@@ -9,7 +9,7 @@ from atlas.platform.ids import generate_id
 
 
 def _cosine_similarity(v1: list[float], v2: list[float]) -> float:
-    dot = sum(a * b for a, b in zip(v1, v2))
+    dot = sum(a * b for a, b in zip(v1, v2, strict=False))
     mag1 = math.sqrt(sum(a * a for a in v1))
     mag2 = math.sqrt(sum(b * b for b in v2))
     if mag1 == 0 or mag2 == 0:
@@ -43,11 +43,11 @@ class StoryboardAgent:
 
         timing_by_beat = {bt.beat_id: bt for bt in timing_plan.beat_timings}
 
-        for i, (beat, beat_emb) in enumerate(zip(script.beats, beat_embs)):
+        for i, (beat, beat_emb) in enumerate(zip(script.beats, beat_embs, strict=False)):
             best_candidate = None
             best_score = -999.0
 
-            for cand, cand_emb in zip(candidates, candidate_embs):
+            for cand, cand_emb in zip(candidates, candidate_embs, strict=False):
                 score = _cosine_similarity(beat_emb, cand_emb)
 
                 # Heavily penalize reusing the same image
@@ -63,11 +63,7 @@ class StoryboardAgent:
                 best_candidate = candidates[0]
 
             used_candidate_ids.add(best_candidate.id)
-            motion = (
-                MotionTreatment.SLOW_ZOOM_IN
-                if i % 2 == 0
-                else MotionTreatment.SLOW_ZOOM_OUT
-            )
+            motion = MotionTreatment.SLOW_ZOOM_IN if i % 2 == 0 else MotionTreatment.SLOW_ZOOM_OUT
             timing = timing_by_beat[beat.id]
 
             scenes.append(

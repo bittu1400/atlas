@@ -64,6 +64,7 @@ def api_client(db_session: AsyncSession, test_storage: LocalStorage) -> AsyncCli
     from atlas.platform.quota import QuotaManager
 
     from apps.api.dependencies import get_pipeline_runner, get_queue_broker
+
     app.dependency_overrides[get_queue_broker] = lambda: FakeQueueBroker()
 
     def override_get_pipeline_runner():
@@ -84,8 +85,9 @@ def api_client(db_session: AsyncSession, test_storage: LocalStorage) -> AsyncCli
             renderer=FakeRenderer(test_storage),
             notifier=FakeNotifier(),
             quota_mgr=QuotaManager(ExecutionRepository(db_session)),
-            publisher=FakePublisher()
+            publisher=FakePublisher(),
         )
+
     app.dependency_overrides[get_pipeline_runner] = override_get_pipeline_runner
 
     transport = ASGITransport(app=app)

@@ -165,9 +165,13 @@ class ExtractionAgent:
         # 9. Create or update Knowledge Object Version
         ko_id = f"ko_{topic_id}"
         all_claim_ids = [c.id for c in claim_domain_objs]
+
+        current_ko = await self.knowledge_repo.get_current(ko_id)
+        next_version = (current_ko.version + 1) if current_ko else 1
+
         ko_version = KnowledgeObjectVersion(
             ko_id=ko_id,
-            version=1,
+            version=next_version,
             topic_id=topic_id,
             status=KnowledgeObjectStatus.DRAFT,
             actor_id="agent.extraction",
@@ -195,5 +199,5 @@ class ExtractionAgent:
             claims_count=len(claim_domain_objs),
             evidence_count=len(evidence_domain_objs),
             knowledge_object_id=ko_id,
-            ko_version=1,
+            ko_version=next_version,
         )

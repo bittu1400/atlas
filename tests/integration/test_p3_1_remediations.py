@@ -103,6 +103,7 @@ def api_client(db_session: AsyncSession, test_storage: LocalStorage) -> AsyncCli
     from atlas.adapters.fakes.providers import FakeQueueBroker
 
     from apps.api.dependencies import get_queue_broker
+
     app.dependency_overrides[get_queue_broker] = lambda: FakeQueueBroker()
 
     transport = ASGITransport(app=app)

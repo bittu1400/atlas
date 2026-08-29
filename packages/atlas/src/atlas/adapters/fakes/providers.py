@@ -391,7 +391,12 @@ class FakeSourceFetcher(SourceFetcher):
 class FakeImageSearch(ImageSearch):
     """Deterministic archival image search returning CC-BY and Public Domain items."""
 
+    def __init__(self, candidates: list[ImageCandidate] | None = None) -> None:
+        self.custom_candidates = candidates
+
     async def search_archival(self, query: str, limit: int = 10) -> list[ImageCandidate]:
+        if self.custom_candidates is not None:
+            return self.custom_candidates[:limit]
         return [
             ImageCandidate(
                 id=f"img_{hashlib.sha256(f'{query}_1'.encode()).hexdigest()[:8]}",
@@ -451,6 +456,8 @@ class FakeRenderer(Renderer):
 
     def __init__(self, storage: Storage) -> None:
         self.storage = storage
+        self.last_storyboard: Storyboard | None = None
+        self.rendered_artifacts: list[RenderArtifact] = []
 
     async def render(
         self,
@@ -459,6 +466,7 @@ class FakeRenderer(Renderer):
         target: RenderTarget,
         run_id: str,
     ) -> RenderArtifact:
+        self.last_storyboard = storyboard
         # Generate simulated MP4 and WebVTT bytes
         video_bytes = (
             f"SIMULATED_MP4_VIDEO_{target.value}_{run_id}_{len(storyboard.scenes)}scenes".encode()

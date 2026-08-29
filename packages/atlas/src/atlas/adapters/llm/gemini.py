@@ -19,6 +19,7 @@ from atlas.application.ports.llm import (
     StructuredLlm,
 )
 from atlas.platform.errors import AtlasError
+from atlas.platform.redaction import redact_secret
 from pydantic import BaseModel
 
 T = TypeVar("T", bound=BaseModel)
@@ -56,12 +57,14 @@ class GeminiLlm(Llm, StructuredLlm):
     def capabilities(self) -> LlmCapabilities:
         return self._capabilities
 
+    def _redact_error(self, exc: Exception) -> str:
+        """Redact API key from exception message (rule R12)."""
+        return redact_secret(exc, self.api_key)
+
     async def complete(self, request: LlmRequest) -> LlmResponse:
         """Generate text completion from prompt using Gemini API."""
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_id}:generateContent"
-            f"?key={self.api_key}"
-        )
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_id}:generateContent"
+        headers = {"x-goog-api-key": self.api_key}
         payload: dict[str, Any] = {
             "contents": [{"parts": [{"text": request.prompt}]}],
             "generationConfig": {
@@ -75,7 +78,7 @@ class GeminiLlm(Llm, StructuredLlm):
         start_time = time.monotonic()
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-                resp = await client.post(url, json=payload)
+                resp = await client.post(url, headers=headers, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
 
@@ -102,14 +105,12 @@ class GeminiLlm(Llm, StructuredLlm):
         except Exception as exc:
             if isinstance(exc, GeminiProviderError):
                 raise
-            raise GeminiProviderError(str(exc)) from exc
+            raise GeminiProviderError(self._redact_error(exc)) from exc
 
     async def extract(self, request: LlmRequest, schema: type[T]) -> Extracted:
         """Extract structured Pydantic schema using Gemini JSON response mode."""
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_id}:generateContent"
-            f"?key={self.api_key}"
-        )
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_id}:generateContent"
+        headers = {"x-goog-api-key": self.api_key}
 
         schema_json = json.dumps(schema.model_json_schema())
         instruction = (
@@ -131,7 +132,7 @@ class GeminiLlm(Llm, StructuredLlm):
         start_time = time.monotonic()
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-                resp = await client.post(url, json=payload)
+                resp = await client.post(url, headers=headers, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
 
@@ -161,4 +162,4 @@ class GeminiLlm(Llm, StructuredLlm):
         except Exception as exc:
             if isinstance(exc, GeminiProviderError):
                 raise
-            raise GeminiProviderError(f"Extraction failed: {exc}") from exc
+            raise GeminiProviderError(f"Extraction failed: {self._redact_error(exc)}") from exc

@@ -29,17 +29,17 @@ class PublishScheduler:
     ) -> PublishSlot:
         """
         Schedule a publish slot enforcing blackout rules.
-        
+
         Args:
             channel: The channel for publishing.
             platform: Platform name.
             content_format: Format of content.
             proposed_local_datetime: Proposed datetime in the audience timezone.
                 If it has no tzinfo, it will be assumed to be in audience timezone.
-                
+
         Returns:
             PublishSlot in UTC.
-            
+
         Raises:
             BlackoutWindowViolationError if the local time falls in blackout window.
         """

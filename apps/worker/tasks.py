@@ -1,4 +1,3 @@
-
 import asyncio
 
 import dramatiq
@@ -7,6 +6,7 @@ from atlas.adapters.persistence.database import get_session_manager
 from atlas.platform.logging import get_logger
 
 logger = get_logger("apps.worker.tasks")
+
 
 async def _execute_pipeline_async(run_id: str) -> None:
     logger.info("worker.task_started", run_id=run_id)
@@ -17,6 +17,7 @@ async def _execute_pipeline_async(run_id: str) -> None:
         runner = container.get_pipeline_runner()
         await runner.run_pipeline(run_id)
         logger.info("worker.task_finished", run_id=run_id)
+
 
 @dramatiq.actor
 def execute_pipeline_task(run_id: str) -> None:

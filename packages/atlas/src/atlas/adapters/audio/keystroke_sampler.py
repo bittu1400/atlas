@@ -6,6 +6,7 @@ from typing import TypedDict
 
 class KeystrokeModifier(TypedDict):
     """Struct describing modifiers for a selected keystroke sample."""
+
     sample_path: str
     volume_modifier: float
     pitch_modifier: float
@@ -40,7 +41,5 @@ class KeystrokeSampler:
         pitch = 1.0 + random.uniform(-0.05, 0.05)
 
         return KeystrokeModifier(
-            sample_path=selected_sample,
-            volume_modifier=velocity,
-            pitch_modifier=pitch
+            sample_path=selected_sample, volume_modifier=velocity, pitch_modifier=pitch
         )

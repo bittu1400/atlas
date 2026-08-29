@@ -7,6 +7,7 @@ console = Console()
 
 app = typer.Typer(help="Backup and restore commands.")
 
+
 @app.command("backup")
 def backup(output_file: str = typer.Option("atlas_backup.tar.gz", help="Output backup file")):
     """Backup Postgres database and blobs."""
@@ -16,6 +17,7 @@ def backup(output_file: str = typer.Option("atlas_backup.tar.gz", help="Output b
         console.print("[bold green]Backup complete![/bold green]")
     except subprocess.CalledProcessError as e:
         console.print(f"[bold red]Backup failed: {e}[/bold red]")
+
 
 @app.command("restore")
 def restore(input_file: str = typer.Argument(..., help="Input backup file to restore from")):

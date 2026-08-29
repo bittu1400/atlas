@@ -431,7 +431,9 @@ class PipelineRunner:
                 run_id=run.id,
                 step_id=step.id,
             )
-            candidates = await self.image_search.search_archival(run.topic_id, limit=max(5, len(script_res.script.beats)))
+            candidates = await self.image_search.search_archival(
+                run.topic_id, limit=max(5, len(script_res.script.beats))
+            )
             if not candidates:
                 # Fallback to something that passes if candidates fail
                 candidates = await self.image_search.search_archival("history", limit=1)
@@ -449,7 +451,9 @@ class PipelineRunner:
                 step_id=step.id,
             )
             storyboard_id = f"stb_{run.topic_id}"
-            soundtrack = await self.sound_design_agent.compose(storyboard_id, script_res.timing_plan)
+            soundtrack = await self.sound_design_agent.compose(
+                storyboard_id, script_res.timing_plan
+            )
             return soundtrack.id
 
         elif stage == PipelineStage.REMOTION_RENDER:

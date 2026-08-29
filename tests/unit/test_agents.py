@@ -243,6 +243,78 @@ async def test_extraction_agent_execution(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
+async def test_extraction_agent_increments_knowledge_object_version(tmp_path: Any) -> None:
+    """Test W-05: Subsequent extractions for the same topic increment KO version."""
+    storage = LocalStorage(root_dir=str(tmp_path))
+    source_repo = InMemorySourceRepository()
+    knowledge_repo = InMemoryKnowledgeRepository()
+    exec_repo = InMemoryExecutionRepository()
+    llm = FakeLlm()
+    quota_mgr = QuotaManager(execution_repo=exec_repo)  # type: ignore[arg-type]
+
+    fetcher = FakeSourceFetcher()
+    bytes_data, chash, mime = await fetcher.fetch("https://archive.org/details/chess")
+    blob_key = await storage.put(bytes_data, mime)
+
+    from atlas.domain.common.enums import SourceTier
+    from atlas.platform.ids import generate_snapshot_id, generate_source_id
+    from pydantic import HttpUrl
+
+    source = Source(
+        id=generate_source_id(),
+        title="Chess History Archive",
+        url=HttpUrl("https://archive.org/details/chess"),
+        source_tier=SourceTier.PRIMARY,
+        created_at=utc_now(),
+    )
+    await source_repo.save_source(source)
+
+    snapshot = Snapshot(
+        id=generate_snapshot_id(),
+        source_id=source.id,
+        content_hash=chash,
+        storage_key=blob_key,
+        byte_size=len(bytes_data),
+        mime_type=mime,
+        retrieved_at=utc_now(),
+    )
+    await source_repo.save_snapshot(snapshot)
+
+    extraction_agent = ExtractionAgent(
+        llm=llm,
+        storage=storage,
+        source_repo=source_repo,
+        knowledge_repo=knowledge_repo,
+        quota_mgr=quota_mgr,
+    )
+
+    # First extraction creates version 1
+    res1 = await extraction_agent.execute(
+        topic_id="chess_origins",
+        topic_title="Origin of Chess",
+        snapshot_id=snapshot.id,
+        run_id="run_v1",
+        step_id="step_v1",
+    )
+    assert res1.ko_version == 1
+
+    # Second extraction increments to version 2
+    res2 = await extraction_agent.execute(
+        topic_id="chess_origins",
+        topic_title="Origin of Chess",
+        snapshot_id=snapshot.id,
+        run_id="run_v2",
+        step_id="step_v2",
+    )
+    assert res2.ko_version == 2
+
+    # Verify history has both versions
+    history = await knowledge_repo.get_history("ko_chess_origins")
+    assert len(history) == 2
+    assert [v.version for v in history] == [1, 2]
+
+
+@pytest.mark.asyncio
 async def test_verification_agent_execution() -> None:
     source_repo = InMemorySourceRepository()
     exec_repo = InMemoryExecutionRepository()

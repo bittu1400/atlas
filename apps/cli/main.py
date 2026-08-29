@@ -6,8 +6,10 @@ As specified in ARCHITECTURE.md §1:
 """
 
 import asyncio
+import subprocess
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import typer
 from atlas.adapters.container import Container
@@ -25,6 +27,7 @@ from atlas.application.usecases.get_run_status import (
 )
 from atlas.application.usecases.reject_gate import RejectGateUseCase
 from atlas.domain.execution.models import RejectionAction, RejectionFeedback
+from atlas.platform.config import get_settings
 from rich.console import Console
 from rich.table import Table
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,9 +48,6 @@ app.add_typer(gate_app)
 app.add_typer(quota_app)
 
 console = Console()
-
-
-
 
 
 def _build_runner_and_repos(
@@ -337,12 +337,10 @@ def quota_status_cmd() -> None:
 
     asyncio.run(_run())
 
+
 # =============================================================================
 # Deployment Commands
 # =============================================================================
-
-import os
-import subprocess
 
 
 @app.command("backup")
@@ -352,16 +350,24 @@ def backup_cmd(
     """Backup Postgres database and blobs."""
     console.print(f"[bold green]Starting backup to {output_file}...[/bold green]")
     try:
-        # Dump DB
-        db_url = os.getenv("ATLAS_DATABASE_URL", "postgresql://atlas:atlas_password@localhost:5432/atlas_db")
-        # Strip +asyncpg if present
-        sync_db_url = db_url.replace("+asyncpg", "")
+        settings = get_settings()
+        sync_db_url = settings.database_sync_url.replace("+psycopg", "").replace("+asyncpg", "")
         subprocess.run(["pg_dump", sync_db_url, "-F", "c", "-f", "/tmp/db_dump.custom"], check=True)
+
         # Tar blobs + DB dump
-        subprocess.run(["tar", "-czf", output_file, "-C", "/var/atlas", "blobs", "-C", "/tmp", "db_dump.custom"], check=True)
+        storage_path = Path(settings.storage_root).resolve()
+        parent_dir = str(storage_path.parent)
+        folder_name = storage_path.name
+
+        cmd = ["tar", "-czf", str(Path(output_file).resolve()), "-C", "/tmp", "db_dump.custom"]
+        if storage_path.exists():
+            cmd.extend(["-C", parent_dir, folder_name])
+
+        subprocess.run(cmd, check=True)
         console.print("[bold green]Backup complete![/bold green]")
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, OSError) as e:
         console.print(f"[bold red]Backup failed: {e}[/bold red]")
+        raise typer.Exit(code=1) from e
 
 
 @app.command("restore")
@@ -371,15 +377,22 @@ def restore_cmd(
     """Restore Postgres database and blobs from backup."""
     console.print(f"[bold yellow]Starting restore from {input_file}...[/bold yellow]")
     try:
+        settings = get_settings()
         # Untar
         subprocess.run(["tar", "-xzf", input_file, "-C", "/tmp"], check=True)
-        subprocess.run(["cp", "-r", "/tmp/blobs", "/var/atlas/"], check=True)
+        if Path("/tmp/blobs").exists():
+            Path(settings.storage_root).parent.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                ["cp", "-r", "/tmp/blobs", str(Path(settings.storage_root).parent)], check=True
+            )
         # Restore DB
-        db_url = os.getenv("ATLAS_DATABASE_URL", "postgresql://atlas:atlas_password@localhost:5432/atlas_db")
-        sync_db_url = db_url.replace("+asyncpg", "")
+        sync_db_url = settings.database_sync_url.replace("+psycopg", "").replace("+asyncpg", "")
         subprocess.run(["pg_restore", "-d", sync_db_url, "-1", "/tmp/db_dump.custom"], check=True)
         console.print("[bold green]Restore complete![/bold green]")
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, OSError) as e:
         console.print(f"[bold red]Restore failed: {e}[/bold red]")
+        raise typer.Exit(code=1) from e
+
+
 if __name__ == "__main__":
     app()

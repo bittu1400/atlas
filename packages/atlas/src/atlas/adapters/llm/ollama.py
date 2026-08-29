@@ -194,8 +194,8 @@ class OllamaEmbedder(Embedder):
 
                 # Fallback to sequential
                 import asyncio
+
                 tasks = [self.embed(t) for t in texts]
                 return await asyncio.gather(*tasks)
         except Exception as exc:
             raise OllamaProviderError(f"Batch embedding failed: {exc}") from exc
-

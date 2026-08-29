@@ -84,18 +84,18 @@ def get_publishing_repository(
     return PublishingRepository(session)
 
 
-
-
-
 def get_queue_broker() -> QueueBroker:
     # Just a placeholder if we need queue_broker directly
     return Container().queue_broker
 
+
 def get_publisher() -> Publisher:
     return Container().publisher
 
+
 def get_speech() -> Speech:
     return Container().speech
+
 
 def get_pipeline_runner(session: AsyncSession = Depends(get_db_session)) -> PipelineRunner:
     return Container(session).get_pipeline_runner()

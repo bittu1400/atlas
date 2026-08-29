@@ -16,7 +16,7 @@ class AudioCompositor:
 
     def compose(self, soundtrack: SoundTrack, output_path: str) -> str:
         """Compose the soundtrack into an output file.
-        
+
         Builds an FFmpeg filter graph with music ducking, sfx overlay, and loudnorm.
         Returns the path to the composed file.
         """
@@ -47,9 +47,7 @@ class AudioCompositor:
 
         # Mix all tracks together
         num_inputs = len(soundtrack.sfx_cues) + 1
-        filter_complex.append(
-            f"{mix_inputs}amix=inputs={num_inputs}:normalize=0[mixed];"
-        )
+        filter_complex.append(f"{mix_inputs}amix=inputs={num_inputs}:normalize=0[mixed];")
 
         # Apply loudnorm
         loudnorm = f"loudnorm=I={soundtrack.target_lufs}:TP=-1.5:LRA=11"
@@ -62,11 +60,7 @@ class AudioCompositor:
             "-y",
         ]
         cmd.extend(inputs)
-        cmd.extend([
-            "-filter_complex", filter_script,
-            "-map", "[out]",
-            output_path
-        ])
+        cmd.extend(["-filter_complex", filter_script, "-map", "[out]", output_path])
 
         cmd_str = " ".join(cmd)
         logger.info(f"Executing FFmpeg audio composition: {cmd_str}")
