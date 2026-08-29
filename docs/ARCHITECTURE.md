@@ -279,3 +279,79 @@ content-addressed blobs mean the migration is a configuration change and a file 
 **Configuration** — `.env` for secrets, YAML for structure (routing policy, style profiles, research
 profiles, gate defaults), and runtime overrides in the database for anything the dashboard can toggle.
 Nothing is hardcoded; every layer is documented in the deployment guide.
+
+---
+
+## 11. Divergence register — documented structure vs. actual code
+
+**Added 2026-08-29** by the audit in `docs/AUDIT-2026-08-29.md`. Sections 1–10 above describe the
+**intended** structure and remain the target. This section records, precisely, where the code on
+disk does not match them. It exists because three phases of work were declared complete against the
+description above without anyone checking the description against the tree.
+
+**Rule going forward:** this table is verified and updated at the end of every working session that
+touches structure. A row is deleted only when the code matches the doc — never when the doc is
+quietly edited to match the code.
+
+Verified against HEAD `9938244` on 2026-08-29.
+
+### 11.1 Folder layout (§2)
+
+| Documented | Actual | Note |
+|---|---|---|
+| `packages/fakes/` — "deterministic provider doubles used by every test" | Exists but contains **only `__init__.py`**. The real fakes are at `packages/atlas/src/atlas/adapters/fakes/providers.py` (~22 KB) | §5 and §9 both point readers at the empty directory. Either move the fakes there or delete the shell and fix three references. |
+| `adapters/embedding/` | Does not exist. `OllamaEmbedder` lives in `adapters/llm/ollama.py` | |
+| `adapters/sound/` | Actual directory is `adapters/audio/` | |
+| `adapters/notify/` | Does not exist. `FakeNotifier` is the only `Notifier`, in `adapters/fakes/` | The production container wires a fake notifier. |
+| `adapters/llm/gemini/`, `adapters/llm/ollama/` (packages) | Single modules: `gemini.py`, `ollama.py` | Cosmetic. |
+| `adapters/renderer/remotion/` + `adapters/renderer/ffmpeg/` | One module `adapters/renderer/remotion.py`; ffmpeg is invoked inline via `subprocess` | |
+| — | `adapters/publish/`, `adapters/queue/`, `adapters/search/` exist and are **absent from §2** | |
+| `deploy/` — "compose files, Caddyfile, VPS path" | Does not exist. `docker-compose.yml` and `Caddyfile` sit at the repository root | |
+| `domain/` subpackages: knowledge, focus, script, media, quality, execution | All present, **plus** undocumented `domain/assets/`, `domain/common/`, `domain/publishing/` | |
+| — | `application/pipeline/` (holds `runner.py`, the orchestrator) is **absent from §2** | The single most important module in the application layer is undocumented. |
+
+### 11.2 Enforcement claims (§1)
+
+| Claim | Reality |
+|---|---|
+| "Enforced in CI by an import-linter contract, not by good intentions." | **False.** `import-linter` is not a dependency and no contract file exists. Enforcement is `tests/unit/test_layering_boundaries.py`, a hand-rolled AST check covering **`domain/` only** — the `adapters → application → domain` direction is not checked at all. See ADR-0014 for the decision to extend the AST test rather than adopt import-linter. |
+| "Provider independence is enforced by import direction." | Holds for vendor SDKs. Does **not** hold for fakes: `adapters/container.py` — the production container — imports `FakeSearch`, `FakeSourceFetcher` and `FakeNotifier` from `adapters/fakes/` (defect C-01). |
+
+### 11.3 Persistence (§6)
+
+| Claim | Reality |
+|---|---|
+| "a `blobs` table holding metadata, size, media type, and reference count" | **No `blobs` table exists.** 25 tables are defined in `adapters/persistence/tables.py`; none is `BlobTable`. Blobs are written to `var/blobs/sha256/…` by `LocalStorage` with no database row, so there is no reference count and no deduplication bookkeeping. |
+| "Vectors: pgvector in the same Postgres" | **Not present.** No `pgvector` extension, no vector column, no import. Bypass mode is not merely the default — it is the only mode. |
+
+### 11.4 Ports (§5)
+
+| Claim | Reality |
+|---|---|
+| `StructuredLlm.extract` — "validate, one repair attempt, then fail loudly" | No repair attempt exists in either `GeminiLlm` or `OllamaLlm`. A malformed payload fails immediately. |
+| "Every port is selected by configuration, never by import." | Ports are selected by **import**, in `Container.__init__`. There is no configuration surface for provider choice. |
+| Port list: `Llm`, `StructuredLlm`, `Embedder`, `Search`, `SourceFetcher`, `ImageSearch`, `ImageGenerator`, `SoundLibrary`, `Renderer`, `Storage`, `Publisher`, `Notifier`, `Speech` | All present in `application/ports/`, plus an undocumented `QueueBroker` port (`ports/queue.py`) and `repositories.py`. |
+
+### 11.5 Observability (§7)
+
+| Claim | Reality |
+|---|---|
+| "A `trace_id` generated per Run and propagated through `contextvars` reaches every log line" | Partial. `structlog.contextvars.merge_contextvars` is configured in `platform/logging.py`, and `runs.trace_id` exists, but no code binds the trace ID into the context. Log lines do not carry it. |
+| "`model_calls` — provider, model, prompt version, token counts, latency, cache hit, outcome" | The table has the columns. **The values are wrong**: every row records `provider='fake'`, `model_id='fake-…'` because `RoutingPolicy.get_route()` defaults `use_fakes=True` and no caller overrides it (defect D-01). |
+
+### 11.6 Testing (§9)
+
+| Claim | Reality |
+|---|---|
+| "Cassettes — real provider responses recorded once, replayed thereafter" | Does not exist. No cassette files, no recording mechanism, no library. |
+| "Golden — the hand-scored quality set" | Does not exist. This is a prerequisite for ADR-0012's quality measurement. |
+| "End-to-end … against `packages/fakes/`" | The e2e test (`tests/integration/test_pipeline_execution_e2e.py`) runs against `adapters/fakes/`; `packages/fakes/` is empty. |
+| Unit: "No network, no database, no filesystem" | `tests/unit/test_layering_boundaries.py` reads the filesystem by design. Acceptable, but the rule as written forbids it. |
+
+### 11.7 Deployment (§10)
+
+| Claim | Reality |
+|---|---|
+| "Configuration — `.env` for secrets, YAML for structure (routing policy, style profiles, research profiles, gate defaults)" | **No YAML configuration exists.** Routing policy is a Python dict (`policies/quota_policy.py`), gate defaults are a Python dict (`policies/gate_policy.py`), style and research profiles do not exist. |
+| "Nothing is hardcoded" | Model IDs, the Ollama base URL, and the story angle are hardcoded. See ADR-0012 §3 and §4, and defects C-08, R-05. |
+| "runtime overrides in the database for anything the dashboard can toggle" | Not implemented. `GatePolicy.should_suspend` accepts a `policy_override` argument that no caller ever passes. |

@@ -6,6 +6,10 @@
 This document defines *what Atlas does* and *what correct means*. `docs/ARCHITECTURE.md` defines how it
 is built. Where behaviour and code disagree, this document is right and the code is a defect.
 
+> **2026-08-29 —** That last sentence has never been checked. See **§17** for every place the code
+> currently disagrees with this spec, and `docs/AUDIT-2026-08-29.md` for why the check was overdue.
+> This document is unchanged; §17 records the defects, it does not amend the spec.
+
 ---
 
 ## 1. Thesis
@@ -426,3 +430,100 @@ Non-blocking, needed before the phase noted.
 - **Quality threshold of 78** — provisional, to be re-fixed after judge calibration.
 - **Backup and restore** — Postgres PITR plus a portable export bundle; required before the first
   published video, since knowledge is the product and it is irreplaceable.
+
+---
+
+## 17. Implementation divergence register
+
+**Added 2026-08-29.** Sections 1–16 are unchanged and remain product truth. This section records
+where the code on disk disagrees with them. Per the header rule, **every row below is a defect in
+the code, not a correction to the spec.** Defect IDs refer to `docs/AUDIT-2026-08-29.md` §3.
+
+Verified against HEAD `9938244`.
+
+### 17.1 Pipeline stage count and numbering (§6)
+
+§6 lists **17** stages. `STAGE_SEQUENCE` in `application/pipeline/runner.py` has **18**: the code
+splits spec stage 8 ("Script", manual) into two — `SCRIPT_GENERATION` (automatic) and
+`SCRIPT_APPROVAL` (manual). That split is reasonable and the spec should probably adopt it, but
+until it does, the two documents disagree and a third (`docs/phase-7-execution.md`, now retracted)
+said 17 while `docs/STATUS.md` said 18.
+
+**Action:** decide whether §6 adopts the 18-stage split, then make all three agree.
+
+### 17.2 Gate policy (§6)
+
+| Spec stage | Spec gate | `DEFAULT_STAGE_GATES` in code | Divergence |
+|---|---|---|---|
+| 5 · Fact verification | **hybrid** — manual on `contested` | `AUTOMATIC` | Contested claims are **never escalated to a human.** `GatePolicy.should_suspend` has the hybrid branch, but the runner calls it as `should_suspend(stage)` (`runner.py:268`), so `has_contested_claims` is always `False` and the branch is dead. |
+| 7 · Story angle | **hybrid** — Atlas proposes, operator picks | `AUTOMATIC` | The operator never picks. The runner hardcodes `story_angle="Origins and Preservation"` (defect R-05). |
+| 11 · Asset selection | **manual**, always manual for AI-generated | `MANUAL` | Suspends correctly, but the AI-specific branch is dead for the same reason: `has_ai_generated_assets` is never passed. Combined with `validate_ai_image_approval()` having no production caller (defect D-05), **Invariant 9 has no runtime enforcement at all.** |
+| 17 · Publish | "Phase 1: manual export. Interface stubbed." | `AUTOMATIC` | The stage returns a string and never calls the publisher (defect R-03). "Stubbed" is accurate; "records that it did not publish" is not implemented. |
+
+§6 also states "Every gate is switchable to `automatic`, `manual`, or `hybrid` from the dashboard and
+the CLI." `GatePolicy.should_suspend` accepts a `policy_override` parameter; **no caller passes it**,
+and no dashboard or CLI surface exists for it.
+
+### 17.3 Approval semantics (§7)
+
+> "Approval records the actor, the timestamp, and the artifact version approved."
+
+The `approvals` table records `actor_id` and `created_at`. It records **no artifact version**, and
+neither does `gates` (defect R-10). An approval therefore cannot identify what was approved — and
+because the script is regenerated at five separate stages (defect R-02), the artifact a human
+approved is provably not the artifact that proceeds.
+
+### 17.4 Source policy (§9) and provider ladder (§11)
+
+- §11 / ADR-0004: "Retrieval never consumes Tier 2. A fact absent from Tier 0 is not obtained by
+  asking a model." Honoured in the routing table. **Violated in practice on 2026-08-29** by the
+  hardcoded-payload incident, where facts came from neither Tier 0 nor a model.
+- The production container wires `FakeSearch` and `FakeSourceFetcher` for Tier 0 retrieval
+  (defect C-01). Real `WikipediaSearch` and `HttpSourceFetcher` exist and are unwired (C-02).
+- Tier assignments in §11 are amended by **ADR-0012** (Tier 1 becomes primary; Tier 2 reserved for
+  fact verification) after measurement showed the Gemini free tier allows 20 requests/day.
+
+### 17.5 Quality (§8)
+
+- §8.3 deterministic checks: the duration bound (58–62 s) is satisfied trivially because
+  `TimingPlan.total_duration_seconds` **defaults to `60.0`** and is never computed from beats
+  (defect R-04, `domain/script/models.py:90`). A plan holding 3.5 seconds of beats reports 60.0 and
+  passes.
+- §8.1 rubric: eight dimensions, implemented and enforced by Pydantic. Correct.
+- §8.4 calibration and the golden set do not exist. This blocks ADR-0012's quality measurement.
+
+### 17.6 Phase numbering (§15) — the documents use different phase numbers
+
+This is the most confusing divergence in the repository and must be resolved before the next
+session plans anything.
+
+| Phase | §15 of this spec | `docs/STATUS.md` claims | Built? |
+|---|---|---|---|
+| 4 | Frontend + CLI | Frontend + Remotion Renderer | Frontend yes; renderer is an ffmpeg blue rectangle (C-03) |
+| 5 | Agents | Agents & Intelligence Engine | Agents exist; two violate the invariants they enforce (D-02, D-04) |
+| 6 | **Knowledge system** — graph, Focus, Entity binding, novelty, impact index | **Production Pipeline Integration** — a different deliverable entirely | Spec's Phase 6 was **never built**: no graph, no novelty policy, no impact index in `application/policies/` |
+| 7 | **Rendering** — Remotion compositions, sound design, both targets | **End-to-End Execution** | Spec's Phase 7 was never built; STATUS's Phase 7 was fabricated (ADR-0011) |
+| 8 | Publishing | — | Not built |
+
+`docs/STATUS.md` silently renumbered the phases and then declared the renumbered ones complete. The
+spec's Phase 6 (knowledge system: novelty detection, entity binding, claim impact index, graph) has
+**no implementation at all** — `application/policies/` contains only `gate_policy.py`,
+`license_policy.py` and `quota_policy.py`.
+
+**Decided 2026-08-29 (D58):** adopt **this spec's** numbering, and add a table to `docs/STATUS.md`
+mapping the old STATUS phase names onto these phases so the Phase-6 adapter work is recounted rather
+than lost. Audit tasks **T-38** (reconcile) then **T-31** (rewrite STATUS), in that order.
+
+**Also decided (D57):** the real Remotion renderer is **deferred**. Phase 7 ends at a correct
+Knowledge Object, a verified Script and a real Storyboard. `RemotionRenderer` is renamed
+`StubRenderer`; the data path into it is still fixed so the real renderer is a later drop-in.
+
+### 17.7 Open questions (§16) — status at 2026-08-29
+
+| Question | Change |
+|---|---|
+| ORIGINS audience region | Still open. Needed before Publishing. |
+| Retention policy | Still open, and now also governs quarantine schemas (**ADR-0013**). |
+| Novelty threshold | Still open, and cannot be approached: novelty detection does not exist (§17.6). |
+| Quality threshold of 78 | Still open. Now blocking: **ADR-0012** requires the golden set to measure the Tier 1 quality drop. |
+| Backup and restore | Partially answered — `atlas backup` / `atlas restore` wrap `pg_dump` and `tar`. Untested against a real restore, and must now decide whether quarantine schemas travel with a backup (**ADR-0013**). |

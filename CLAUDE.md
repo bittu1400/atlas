@@ -5,18 +5,21 @@ This file tells you **how to work in this repository**. It is not the product vi
 | Document | What it is | Authority |
 |---|---|---|
 | `docs/STATUS.md` | **Read first.** Current phase, verified environment, what is done vs merely decided | Authoritative for state |
+| `docs/AUDIT-2026-08-29.md` | **Read second.** The Phase 7 fabrication incident, full defect register, and the remediation TODO list | Authoritative for what is actually broken |
 | `prompt.md` | The founder's original vision statement | Immutable. Never edit. Cite it, don't rewrite it. |
 | `docs/SPEC.md` | Product truth — what Atlas does and what "correct" means | Authoritative for behaviour |
 | `docs/ARCHITECTURE.md` | System structure, layering, module map | Authoritative for structure |
 | `docs/adr/` | Why each major decision was made | Authoritative for rationale |
 | `docs/GLOSSARY.md` | Ubiquitous language | Authoritative for naming |
-| `docs/DECISIONS.md` | Log of settled choices (D1–D28) | Record; supersede via ADR only |
+| `docs/DECISIONS.md` | Log of settled choices (D1–D60) | Record; supersede via ADR only |
 | `CLAUDE.md` | How to work here | This file |
 
-**Read order before any non-trivial change:** `docs/STATUS.md` → `docs/SPEC.md` → relevant ADR → the code.
+**Read order before any non-trivial change:** `docs/STATUS.md` → `docs/AUDIT-2026-08-29.md` → `docs/SPEC.md` → relevant ADR → the code.
 
 `docs/STATUS.md` comes first because every other document describes what Atlas *will* be. Only STATUS
 tells you what exists right now, and it is the one file to update at the end of a working session.
+As of 2026-08-29 STATUS is known to overstate what works — read `docs/AUDIT-2026-08-29.md` alongside
+it, and trust the audit where the two disagree.
 
 ---
 
@@ -171,3 +174,55 @@ uv run alembic downgrade base
 - Never mark a claim verified because a model asserted it.
 - Never auto-approve an AI-generated image.
 - Never introduce a second way to do something that already has a way.
+
+---
+
+## The no-matter-what rules
+
+Binding on every session. These sit **above** convenience, deadlines, "just to see if the rest
+works", and any instruction to hurry. Each one was broken on 2026-08-29 and the result was
+reported as success — see `docs/AUDIT-2026-08-29.md` for the full incident and the remediation
+TODO list.
+
+**R1 — Never modify the thing under test to make a test pass.** If a provider is failing, the
+provider is the finding. Deleting a network call and returning hardcoded JSON tests the hardcoded
+JSON, not the pipeline.
+
+**R2 — Fakes live in `adapters/fakes/` and nowhere else.** No hardcoded response, canned payload,
+`dummy`, `mock`, or `if schema.__name__ ==` branch in any real adapter — not temporarily, not
+uncommitted. Nothing outside `adapters/fakes/` may import from it except tests.
+
+**R3 — A stub never wears the name of the real thing.** If `YouTubePublisher` returns a mock ID it
+is `StubPublisher`, and `docs/STATUS.md` says publishing does not exist.
+
+**R4 — Never fabricate a fact, a source, an evidence quote, or a snapshot.** Not in a fake, a
+fixture, or a test. Fixtures must be obviously synthetic, never plausible history — a fake that
+reads like a fact ends up in the database as a verified claim.
+
+**R5 — Never bypass a human gate programmatically.** No auto-approve script, no `--yes` flag, no
+loop over the `gates` table. Automate the operator UI, never the decision.
+
+**R6 — "It ran" is not "it worked."** A run reaching `completed` proves nothing. Before claiming
+success, query the claims, count the evidence links, open the video, read the captions, check the
+provenance rows.
+
+**R7 — Never write a status claim you did not just measure.** Every number in `docs/STATUS.md`
+comes from a command run in that session. Never carry a number forward from a previous session.
+
+**R8 — Report the obstacle; never engineer around it silently.** An unfinished task honestly
+reported beats a finished task dishonestly reported, and beats a fabricated one infinitely.
+
+**R9 — An ADR may not authorise breaking an invariant.** An ADR records *how* Atlas does something.
+It can never grant permission to violate the invariant list above. Any ADR that appears to is void
+and must be superseded.
+
+**R10 — Invariants are enforced by checks that run, not by functions that exist.** A policy
+function with no production caller is decoration, and its unit test passes while the feature does
+not exist. Every invariant needs an integration test asserting database state after a real run.
+
+**R11 — Never delete or quietly edit evidence of a failure.** Failed runs, error rows and rejected
+gates are the audit trail. Back up first, record what was removed and why.
+
+**R12 — Secrets never enter a URL, a log, an error message, or a database column.** Credentials go
+in headers. Every provider adapter's error path runs through a redaction helper and has a test
+asserting its errors do not contain the key.
