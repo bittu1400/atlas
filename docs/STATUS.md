@@ -1,6 +1,7 @@
 # Status
 
-**Last updated:** 2026-08-31 (second independent verification session — audit §15)
+**Last updated:** 2026-08-31 (second independent verification session, then the documentation
+reconciliation that followed it — audit §15)
 **Branch:** `docs/audit-2026-08-29` — see §1.
 
 This file separates **decided** from **done**. Everything else in `docs/` records what Atlas *will*
@@ -14,18 +15,18 @@ current claim.
 
 ## 0. Measured baseline
 
-Measured on 2026-08-31, in the session that wrote this section, after the V-01 – V-11 remediation.
-**Re-run them before quoting them** (**R7**).
+Measured on 2026-08-31, in the session that wrote this section, after the V-01 – V-12 remediation and
+the documentation reconciliation that followed it. **Re-run them before quoting them** (**R7**).
 
 ```
 $ uv run ruff check .
 All checks passed!
 
 $ uv run mypy .
-Success: no issues found in 161 source files
+Success: no issues found in 160 source files
 
 $ uv run pytest --tb=short
-161 passed in 16.85s
+160 passed in 16.72s
 
 $ uv run pre-commit run --all-files
 Ruff Lint Check..........................................................Passed
@@ -37,15 +38,22 @@ packages/tokens · apps/renderer · apps/web — 3 of 3 built
 
 $ uv run alembic upgrade head          # against a fresh `atlas` database
 7 migrations applied, 30 tables + alembic_version
+
+$ python -c "from apps.api.main import app; print(len(app.openapi()['paths']))"
+11 paths, 12 operations — transcribed in ARCHITECTURE §2.1
 ```
 
 There are no `xfail` markers in the suite.
 
-**The three headline numbers held when this session re-measured the previous one's.** What did not
-hold was the claim they were taken to support. The suite exercises the pipeline **against fakes**;
-until this session no test constructed `Container` or called any adapter it wires except
+**The three headline numbers held when this session re-measured the previous one's** — the count
+moved because two stale quota tests were deleted (**D120**), one test of a deleted endpoint went with
+it (**D121**), and thirty-nine were added. What did not hold was the claim those numbers were taken
+to support. The suite exercises the pipeline **against fakes**; until this session no test
+constructed `Container` or called any adapter it wires except
 `LocalStorage`. The first production adapter substituted into a real Run — `LoggingNotifier` — raised
-`TypeError` at the first gate of every Run. That is defect **V-01**, and audit §15 has the rest.
+`TypeError` at the first gate of every Run. That is defect **V-01**, and audit §15 has the rest —
+thirteen defects, of which three were P0 and none had a task in the register before they were found.
+Twelve are fixed; **V-13** is open by decision (**D125**, task **T-60**).
 
 **CI has still never run a single check.** `gh run list` on 2026-08-31 shows two runs, both
 `failure`, both from 2026-08-26, both predating the `uv sync --all-extras` fix. `ci.yml` triggers
@@ -57,8 +65,10 @@ was produced locally and nothing has independently verified it.
 
 ## 1. Working tree state
 
-Clean on branch `docs/audit-2026-08-29`. The most recent behavioural commit is the V-01 – V-11
-remediation described in audit §15; before it, `714cade` carried the B1 – B9 work.
+Clean on branch `docs/audit-2026-08-29`. The most recent behavioural commit is the V-01 – V-12
+remediation described in audit §15, followed by the documentation reconciliation that found **V-13**
+and deliberately left it to task **T-60** (**D125**). Before those, `714cade` carried the B1 – B9
+work.
 
 This file deliberately does not name its own HEAD. A document that states the hash of the commit
 containing it is wrong the moment it is committed. `git log --oneline -5` is the source of truth.
@@ -73,7 +83,7 @@ still never run a single check — see §0.
 Verified means: exercised by a test that inspects database state after a real run, not merely that a
 function exists.
 
-**Phase 1 · Architecture** — complete. Spec, architecture, glossary, ADRs 0001–0016.
+**Phase 1 · Architecture** — complete. Spec, architecture, glossary, ADRs 0001–0017.
 
 **Phase 2 · Database** — complete. 30 tables, 7 Alembic migrations, round-trip tested
 (`test_alembic_migrations_roundtrip` applies head → base → head). Knowledge Objects are
@@ -125,7 +135,7 @@ work is recounted rather than lost.
 | 1 · Architecture | Spec, architecture, glossary, ADRs | Phase 1 (Architecture) | **complete** |
 | 2 · Database | Schema, migrations, KO versioning, repositories | Phase 2 (Database & Persistence) | **complete** |
 | 3 · Backend | FastAPI, worker, Run/Step state machine, gates, quota | Phase 3 (+ 3.1 remediation) | **complete** |
-| 4 · Frontend + CLI | Dashboard shell, approval queue, CLI parity | Phase 4 (Frontend + Remotion Renderer) | **CLI complete; dashboard untested; the renderer half of the old name was never Phase 4 work** |
+| 4 · Frontend + CLI | Dashboard shell, approval queue, CLI parity | Phase 4 (Frontend + Remotion Renderer) | **CLI complete. Dashboard reads the API and renders no fixtures, but no test drives a browser (T-55) and the approval queue cannot show the artifact under review (T-59).** The renderer half of the old name was never Phase 4 work. |
 | 5 · Agents | Research, extraction, verification, script, judge | Phase 5 (Agents & Intelligence Engine) | **complete** |
 | 6 · Knowledge system | Graph, Entity binding, novelty, impact index | *no old equivalent* | **not started.** `application/policies/` holds only gate, license and quota policy. |
 | 7 · Rendering | Remotion compositions, sound design, both targets | Phase 7 (End-to-End Execution) — fabricated | **not started.** Deferred by D57; the data path into the renderer is proven (ADR-0016). |
@@ -138,6 +148,12 @@ SPEC phase: `WikimediaCommonsSearch`, `InternetArchiveSearch`, `CompositeImageSe
 Dramatiq broker, `docker-compose.yml` and `Caddyfile`. Those adapters exist. Five of them are not
 reachable from `Container` and are listed as orphans under audit task **T-28**.
 
+Two corrections to that paragraph, made 2026-08-31: `docker-compose.yml` "existing" was not the same
+as working — it built `api` and `worker` from a `Dockerfile` that did not exist, so
+`docker compose up` failed at the first build until this session wrote one (defect **V-05**). And of
+the wired adapters in that list, only `LocalStorage` had ever been touched by a test (defect
+**V-07**); `tests/integration/test_production_adapters.py` now covers the six that need no network.
+
 ### Invariants with an enforcing check that runs
 
 | Invariant | Enforced by | Proven by |
@@ -149,11 +165,18 @@ reachable from `Container` and are listed as orphans under audit task **T-28**.
 | 4 · Append-only knowledge | `claim_versions`; `save_claim` inserts, never updates | `test_claim_state_changes_append_a_version_and_never_overwrite` |
 | 5 · No provider SDK outside its adapter | AST guards 1–4 over `adapters/` | `tests/unit/test_no_fabrication.py` |
 | 7 · Every artifact records how it was made | `model_calls` provenance taken from the adapter that executed; production artifacts persisted | `test_model_call_provenance_matches_the_adapter_that_ran` |
-| 9 · AI imagery needs human approval | An `Approval` row on the asset-selection gate, resolved by step ID | `test_ai_generated_asset_cannot_be_used_without_approval` **and** `test_ai_generated_asset_is_usable_once_a_human_approves_the_gate` |
 | 8 · Every model call is metered | Every agent holding an LLM or Embedder port takes a `QuotaManager`; `check_rate_limits` reads `quota_ledger` | `test_guard_9_every_agent_that_calls_a_model_holds_a_quota_manager`, `tests/integration/test_quota_enforcement.py`, and the end-to-end assertions on `topic_discovery_v1` and `embedding_v1` |
+| 9 · AI imagery needs human approval | An `Approval` row on the asset-selection gate, resolved by step ID | `test_ai_generated_asset_cannot_be_used_without_approval` **and** `test_ai_generated_asset_is_usable_once_a_human_approves_the_gate` |
 | 10 · Licenses enforced by a gate | `LicensePolicy.validate_asset_license` at asset discovery and storyboard cuts, over a canonicalized license identifier | `test_guard_6_policy_validation_methods_have_production_callers`, plus 19 parametrized dialect tests |
 | R4 · No fixture reads as a fact, in any language | AST guard over Python fakes; text guard over `apps/web/src` and `apps/renderer/src` | `test_guard_7_*` and `test_guard_8_*` |
 | R5/R8 · A failed gate action is never shown as a decision | `ApprovalQueue` surfaces the error and records nothing | `test_guard_8_gate_actions_do_not_report_success_on_failure` |
+
+Invariants **3** (inference and opinion are labelled) and **6** (no hidden global mutable state) are
+absent from this table because neither has an enforcing check that runs. `AssertionType` is required
+on every Claim by Pydantic and conflicting evidence is stored on both sides, which is Invariant 3
+holding *structurally*; `FocusSnapshot` is captured by value into every Run, which is Invariant 6
+holding the same way. Neither has an integration test asserting it after a run, so neither is claimed
+here (**R10** — a policy with no failing case is decoration).
 
 ---
 
@@ -236,6 +259,13 @@ These are real and are not being hidden; each is recorded with the decision that
   summary selects `window_start >= now - 1 minute`, so the RPM check spans between one and two
   wall-clock minutes of rows. It over-counts, never under-counts, which is the safe direction for a
   free tier.
+- **An exhausted quota fails the Run instead of suspending it.** ADR-0004 promises suspend-and-notify;
+  `check_rate_limits` raises and `_execute_stage` marks the Run `failed` along with the Step. Found
+  during the 2026-08-31 documentation reconciliation, recorded rather than fixed in a docs pass
+  (**D106** precedent). It became a real risk only when the budget became shared and enforceable —
+  defect **V-13**, task **T-60**.
+- **Per-Run quota reservations and response caching do not exist.** SPEC §11 promises both.
+  `platform/cache.py` is written and no adapter calls it. Same task, **T-60**.
 - **The approval screen shows Gate rows and nothing else.** An operator can see which Gate is
   pending and open the Run's Knowledge Object and telemetry, but cannot review asset candidates,
   script beats or the quality report in place — §3, **D111**.
@@ -245,37 +275,62 @@ These are real and are not being hidden; each is recorded with the decision that
 ## 5. Where to look next
 
 **Read order for the next session:** this file → `docs/AUDIT-2026-08-29.md` **§15** (what the second
-2026-08-31 verification found, and §15.8 for what not to do), then **§14** (the live task register,
-the ordered work list, the start-up commands) and **§13** for the session before it → `docs/SPEC.md`
-§17 → `docs/ARCHITECTURE.md` §11 → the relevant ADR → the code.
+2026-08-31 verification found; **§15.9** is the live ordered work list, **§15.8** is what not to do),
+then §14 and §13 for the two sessions before it → `docs/SPEC.md` §17 → `docs/ARCHITECTURE.md` **§2.1**
+(the HTTP surface — the contract the dashboard codes against) and §11 → the relevant ADR → the code.
 
-`docs/AUDIT-2026-08-29.md` is the authoritative register of what is broken. Its §14.2 gives the
-open tasks in the order they should be worked and says why that order. The first two, in short:
+`docs/AUDIT-2026-08-29.md` is the authoritative register of what is broken. **§15.9 supersedes §14.2**
+as the ordered list. Its first four, in short:
 
 1. **T-00 / T-11 — CI.** Cannot be closed by a session; the branch has never been pushed. Until it
    is, every number in §0 above is one machine's word.
-2. **T-22 — load the real topic title.** Four lines, immediate quality effect.
-3. **A browser test for the dashboard.** Guard 8 proves the sources hold no fixture; nothing proves
-   the screen renders what the API returns. This is the gap that let **V-03** live for a whole phase.
+2. **T-55 — a browser test for the dashboard.** Guard 8 proves the dashboard's *sources* hold no
+   fixture; nothing proves the *screen* renders what the API returned. That is the gap that let
+   **V-03** stand for a whole phase, and it is the most valuable missing test in the project.
+3. **T-22 — load the real topic title.** Four lines, immediate quality effect.
+4. **T-20 — remove `TimingPlan.total_duration_seconds`'s default.** A deterministic check a default
+   can satisfy is not a check.
 
-**Do not start T-34** (the honest real-provider run) before **T-29** and **T-30**. The Gemini free
-tier allows 20 requests a day and a correct run needs 6–9; that scarcity is the direct cause of the
-2026-08-29 fabrication incident. Re-tiering onto Ollama first is what makes the attempt survivable.
+**Do not start T-34** (the honest real-provider run) before **T-29**, **T-30** and now **T-58**. The
+Gemini free tier allows 20 requests a day and a correct run needs 6–9; that scarcity is the direct
+cause of the 2026-08-29 fabrication incident. Re-tiering onto Ollama first is what makes the attempt
+survivable, and cassettes are what make a failure inside a network adapter debuggable rather than a
+second session.
+
+### What this session did **not** do, so you do not go looking
+
+- **No real-provider run.** No Gemini, Ollama or Freesound call was made from the pipeline. Stage 1
+  was spending Gemini quota unmetered until **V-02** was fixed, so `quota_ledger` cannot tell you
+  today's remaining budget — start T-34 from a re-measured ledger, not from the table in §0.
+- **Ollama is not running on this machine.** `OllamaEmbedder` fails at stage 13 against a live
+  container unless the daemon is up. The URL is configuration now (`OLLAMA_URL`), so point it at
+  wherever the daemon actually is.
+- **`docker compose up` was never run to completion.** `docker compose config` validates and the
+  `Dockerfile` is new and unbuilt. Expect to debug the image once, not to have it work first try.
+- **The branch was not pushed.** That is an operator decision, and it is why CI is still dark.
 
 ### Session close-out checklist
 
 Every working session ends by doing all of these. They exist because each was skipped at least once
 and the result was a document that read as truth.
 
-- [ ] Re-run `uv run ruff check .`, `uv run mypy .`, `uv run pytest`; paste the raw output into §0
-      of this file. Never carry a number forward (**R7**).
-- [ ] Update §1 with the real HEAD and whether the tree is clean.
+- [ ] Re-run `uv run ruff check .`, `uv run mypy .`, `uv run pytest`, `uv run pre-commit run
+      --all-files` and `pnpm -r build`; paste the raw output into §0 of this file. Never carry a
+      number forward (**R7**).
+- [ ] Update §1 with whether the tree is clean. Do not write a commit hash into this file.
 - [ ] Move anything newly true into §2, anything newly known-absent into §3, anything deliberately
       left into §4 with the decision ID.
 - [ ] Tick a task in the audit's §6 **only** if its own *Done when* is met; otherwise write which
-      part is done under the task and leave the box open (**T-50**).
+      part is done under the task and leave the box open (**T-50**). Update **§15.9**'s ordered list
+      if the order changed, and say why.
 - [ ] Record every judgement call in `docs/DECISIONS.md` with the why, and file an ADR if it
       introduced a dependency, changed a data model, changed a layer boundary, added a provider
-      category, or contradicted an existing ADR.
+      category, contradicted an existing ADR, or fired an existing ADR's *Revisit when*.
 - [ ] Re-verify `docs/ARCHITECTURE.md` §11 and `docs/SPEC.md` §17 if the session touched structure
       or behaviour, and say which side of each row changed.
+- [ ] **If you added, removed or changed an HTTP route, update `ARCHITECTURE.md` §2.1 in the same
+      commit.** The dashboard codes against that table; when it did not exist, the dashboard invented
+      an API and rendered fixtures for a phase (**V-03**, **D122**).
+- [ ] **If you touched `apps/web` or `apps/renderer`, run `uv run pytest` — not just `pnpm build`.**
+      Guards 8 and 9 live in the Python suite on purpose (ADR-0017); a front-end change that
+      introduces a fixture fails there and nowhere else.

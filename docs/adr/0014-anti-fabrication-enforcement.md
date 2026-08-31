@@ -4,6 +4,9 @@
 **Date:** 2026-08-29
 **Deciders:** operator
 **Relates to:** ADR-0011, `CLAUDE.md` → "The no-matter-what rules" (R1–R12), Invariants 1, 2, 5, 7, 9
+**Extended by:** ADR-0017 — its "Revisit when" fired on 2026-08-31. Guard 7 (plausible history in
+fixtures), Guards 8 (the operator interface) and 9 (unmetered model calls) were added after this ADR
+was accepted and are catalogued in ADR-0017 §1–§2, not here.
 **Introduces dependency:** `pre-commit` (dev extra only, never a runtime dependency)
 
 ## Context

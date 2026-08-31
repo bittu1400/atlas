@@ -55,3 +55,4 @@ decision, it is a preference.
 | [0014](0014-anti-fabrication-enforcement.md) | Anti-fabrication rules enforced by CI and pre-commit | Accepted |
 | [0015](0015-append-only-claim-versions.md) | Claim state is append-only: identity row plus `claim_versions` | Accepted |
 | [0016](0016-production-artifacts-are-persisted.md) | Scripts, timing plans, storyboards and render artifacts are persisted | Accepted |
+| [0017](0017-anti-fabrication-covers-the-operator-interface.md) | Anti-fabrication enforcement covers the operator interface and every model call site | Accepted |

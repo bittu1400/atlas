@@ -50,6 +50,10 @@ Supporting mechanisms:
   ports expose capabilities and the router checks them before dispatch.
 - **Quota ledger.** Append-only, per provider, tracking both the minute and day windows, with persisted
   token buckets shared across workers. Every call is metered before it is issued.
+  *(Implemented 2026-08-31, D115. Both halves of this bullet were false until then: `check_rate_limits`
+  counted in process memory and never read the ledger, and two agents reached a provider with no
+  QuotaManager at all. Audit §15, defects V-02 and V-04. Recorded here because an ADR whose mechanism
+  was never built is indistinguishable from one that was, and this one read as done for three phases.)*
 - **Per-Run reservations.** Each Run receives a share of the daily budget with a reserve pool for retries,
   so the first video of the day cannot starve the third.
 - **Response caching** keyed on `hash(inputs) + prompt_version + model + parameters`. Retries and

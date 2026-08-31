@@ -207,6 +207,28 @@ saved with the untraceable Claims filtered out. Enforced in `KnowledgeRepository
 before any row is written, so a refused version leaves no version row, no claim rows and no current
 pointer. Silent filtering (defect SC-04) let an Invariant 1 violation pass as a green test.
 
+**Run Knowledge View** — The read model behind `GET /runs/{run_id}/knowledge`: the Run's current
+Knowledge Object with every Claim resolved down its **Traceability Chain** to the Evidence quote, the
+Source, and the Snapshot's content hash. It is what the operator's Knowledge panel renders. A Run
+whose extraction has not run yet returns an empty claim list — never a placeholder Claim.
+
+**Telemetry Event** — One thing a Run actually did, as shown on the operator's Telemetry panel: a
+Step reaching a status, or a metered **Model Call**. `GET /runs/{run_id}/telemetry` merges both
+sources into one time-ordered stream, newest first. It is a projection of `steps` and `model_calls`;
+it is not a log, and nothing writes to it.
+
+**Operator Interface Honesty** — Rule **R13**: every number, Claim, hash and log line a human sees on
+the dashboard comes from a database row. No component holds a fixture, the API client answers a
+failed request with a failure, and a failed Gate action is reported as a failure. Enforced by
+**Guard 8** (ADR-0017). It exists because on 2026-08-31 five components rendered invented Claims and
+invented Snapshot hashes under a badge reading "Invariant 1 & 4 Enforced", and a failed approval was
+displayed to the operator as recorded (defect V-03).
+
+**Unmetered Call** — A model invocation that reaches a provider without passing through the
+**Quota Ledger**: no rate check, no **Model Call** row, no ledger entry, no provenance. Invariant 8
+calls this a bug, not a shortcut. **Guard 9** (ADR-0017) fails the build if an agent can reach a
+model port without holding a `QuotaManager`.
+
 **Quality Report** — Scores per rubric dimension plus the deterministic check results, with a pass or
 fail verdict against the Channel's threshold.
 
@@ -258,7 +280,18 @@ on the GPU, **Tier 2** hosted free-tier models. Routing policy assigns each task
 **Routing Policy** — Configuration mapping task kinds to a Tier, a model, and a fallback chain.
 
 **Quota Ledger** — The append-only record of consumption per provider per window (minute and day),
-with the Run that consumed it. The budget enforcer. Per-invocation detail lives in **Model Call**.
+with the Run that consumed it. The budget enforcer, and it is **read** on every rate check, not only
+written: Atlas runs one process per CLI invocation and one per worker, so a limit held in process
+memory is no limit at all (ADR-0004, defect V-04). Per-invocation detail lives in **Model Call**.
+
+**Canonical License Identifier** — The single hyphenated lower-case form every license string is
+reduced to before Invariant 10's gate compares it. Adapters speak three dialects — Wikimedia Commons
+reports `LicenseShortName` ("CC BY-SA 4.0"), the Internet Archive reports a `licenseurl`
+("https://creativecommons.org/publicdomain/zero/1.0/"), and Atlas's own allowlist is hyphenated —
+and comparing one against the others rejected every validly licensed asset while only "Public
+domain" survived. `canonicalize_license` in `policies/license_policy.py` folds all three; blocked
+restrictions then match whole hyphen-delimited tokens, because the substring "nc" occurs inside the
+word "licence" (defect V-10).
 
 **Prompt Version** — The immutable identifier of a prompt template. Part of the cache key and of every
 artifact's provenance.

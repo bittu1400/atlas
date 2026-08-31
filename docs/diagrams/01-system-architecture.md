@@ -16,7 +16,7 @@ This document visualizes the complete system architecture of Atlas, demonstratin
 |      +--------------+---------------+             +---------------+---------------+   |
 +---------------------|---------------------------------------------|-------------------+
                       |                                             |
-                      | HTTP / SSE                                  | CLI Invocation
+                      | HTTP (polling)                              | CLI Invocation
                       v                                             v
 +---------------------------------------------------------------------------------------+
 |                              LAYER 4: ENTRYPOINTS                                     |
@@ -25,7 +25,7 @@ This document visualizes the complete system architecture of Atlas, demonstratin
 |   |             FastAPI App             |     |          Dramatiq Worker          |   |
 |   |  - Route parsing & serialization    |     |  - Async pipeline step execution  |   |
 |   |  - Enqueues jobs to Postgres queue  |     |  - Acquires shared GPU semaphore  |   |
-|   |  - SSE streams for live UI state    |     |  - Checkpoints step output rows   |   |
+|   |  - 11 routes; see ARCHITECTURE 2.1  |     |  - Checkpoints step output rows   |   |
 |   +------------------+------------------+     +-----------------+-----------------+   |
 +----------------------|------------------------------------------|---------------------+
                        |                                          |

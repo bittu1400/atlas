@@ -10,13 +10,15 @@ This file tells you **how to work in this repository**. It is not the product vi
 | `prompt.md` | The founder's original vision statement | Immutable. Never edit. Cite it, don't rewrite it. |
 | `docs/SPEC.md` | Product truth — what Atlas does and what "correct" means | Authoritative for behaviour |
 | `docs/ARCHITECTURE.md` | System structure, layering, module map | Authoritative for structure |
-| `docs/adr/` | Why each major decision was made (0001–0016; 0010 is void, see 0011) | Authoritative for rationale |
+| `docs/adr/` | Why each major decision was made (0001–0017; 0010 is void, see 0011) | Authoritative for rationale |
 | `docs/GLOSSARY.md` | Ubiquitous language | Authoritative for naming |
-| `docs/DECISIONS.md` | Log of settled choices (D1–D106) | Record; supersede via ADR only |
+| `docs/DECISIONS.md` | Log of settled choices (D1–D125) | Record; supersede via ADR only |
 | `CLAUDE.md` | How to work here | This file |
 
-**Read order before any non-trivial change:** `docs/STATUS.md` → `docs/AUDIT-2026-08-29.md` §15, §14
-and §13 → `docs/SPEC.md` §17 → `docs/ARCHITECTURE.md` §11 → the relevant ADR → the code.
+**Read order before any non-trivial change:** `docs/STATUS.md` → `docs/AUDIT-2026-08-29.md` §15
+(**§15.9 is the live ordered task list**, §15.8 is what not to do), then §14 and §13 →
+`docs/SPEC.md` §17 → `docs/ARCHITECTURE.md` **§2.1** (the HTTP surface) and §11 → the relevant ADR →
+the code.
 
 `docs/STATUS.md` comes first because every other document describes what Atlas *will* be. Only STATUS
 tells you what exists right now, and it is the one file to update at the end of a working session —
@@ -155,6 +157,7 @@ Populated as the toolchain lands. Do not invent commands that are not listed her
 uv sync --all-extras          # --all-extras is required: the dev extra carries ruff, mypy,
                               # pytest and pre-commit. Plain `uv sync` installs none of them,
                               # which is how CI failed silently for two sessions.
+pnpm install                  # workspace: packages/tokens, apps/renderer, apps/web
 
 # Linting & Formatting
 uv run ruff check .
@@ -163,8 +166,14 @@ uv run ruff format .
 # Type checking (strict mode)
 uv run mypy .
 
-# Test suite (unit, integration)
+# Test suite (unit, integration) — this is also the gate for the TypeScript.
+# Guards 8 and 9 in tests/unit/test_no_fabrication.py scan apps/web/src and
+# apps/renderer/src for fixtures, fabricated provenance and unmetered model
+# calls (ADR-0017). `pnpm build` does not catch any of them.
 uv run pytest
+
+# Frontend build & typecheck — all three workspace packages
+pnpm -r build
 
 # Database migrations (Alembic) — for the application database only.
 # The test suite runs its own upgrade/downgrade around the session; do not run these for tests.
@@ -182,7 +191,13 @@ uv run pre-commit run --all-files
 
 **Credentials.** `Container` raises `MissingProviderCredentialError` naming the variable when
 `GEMINI_API_KEY` or `FREESOUND_API_KEY` is missing. It raises at first *use* of the adapter, not at
-construction, so read-only commands such as `atlas quota status` run without any keys.
+construction, so read-only commands such as `atlas quota status` run without any keys. The values come
+from `Settings`, which reads `.env` as well as the process environment — `os.getenv` alone never saw
+`.env`, which is why keys sitting in the file were invisible for two sessions (**D116**, defect V-06).
+`OLLAMA_URL` is read the same way.
+
+**System dependencies.** `ffmpeg` must be on `PATH`: `StubRenderer` shells out to it. The `Dockerfile`
+installs it. There are no others.
 
 ---
 
@@ -195,6 +210,9 @@ construction, so read-only commands such as `atlas quota status` run without any
 - Never mark a claim verified because a model asserted it.
 - Never auto-approve an AI-generated image.
 - Never introduce a second way to do something that already has a way.
+- Never add a fixture, a mock fallback, or a hardcoded fact to `apps/web/` or `apps/renderer/` — see R13.
+- Never add an HTTP route without updating `docs/ARCHITECTURE.md` §2.1 in the same commit.
+- Never construct an agent that touches `self.llm` or `self.embedder` without a `QuotaManager`.
 
 ---
 

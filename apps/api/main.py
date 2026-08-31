@@ -28,7 +28,6 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from apps.api.routes.events import router as events_router
 from apps.api.routes.gates import router as gates_router
 from apps.api.routes.health import router as health_router
 from apps.api.routes.quota import router as quota_router
@@ -186,7 +185,6 @@ def create_app() -> FastAPI:
     app.include_router(runs_router)
     app.include_router(gates_router)
     app.include_router(quota_router)
-    app.include_router(events_router)
 
     return app
 

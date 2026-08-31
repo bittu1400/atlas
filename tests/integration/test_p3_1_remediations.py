@@ -1,6 +1,5 @@
 """Integration tests covering Phase 3.1 remediated execution state machine, runner error handling, and API security."""
 
-import json
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -53,7 +52,6 @@ from apps.api.dependencies import (
     get_storage,
 )
 from apps.api.main import app
-from apps.api.routes.events import event_generator
 
 
 async def _seed_prerequisites(
@@ -378,20 +376,3 @@ async def test_runner_stage_failure_handling(db_session: AsyncSession) -> None:
     failed_step = await exec_repo.get_step(f"step_{run_id}_idea_discovery")
     assert failed_step.status.value == "failed"
     assert "Upstream LLM provider down" in (failed_step.error or "")
-
-
-@pytest.mark.asyncio
-async def test_sse_event_serialization() -> None:
-    """P0-05: Server-Sent Events are serialized with json.dumps without injection vulnerability."""
-    malicious_run_id = 'test_run"}\n\nevent: evil\ndata: {"hacked": true'
-    events = []
-    async for event_chunk in event_generator(malicious_run_id):
-        events.append(event_chunk)
-
-    assert len(events) >= 1
-    chunk = events[0]
-    assert chunk.startswith("data: ")
-    raw_json = chunk[len("data: ") :].rstrip("\n")
-    parsed = json.loads(raw_json)
-    assert parsed["run_id"] == malicious_run_id
-    assert parsed["event"] == "connected"

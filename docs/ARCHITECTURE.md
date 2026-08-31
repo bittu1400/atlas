@@ -48,7 +48,7 @@ atlas/
 ├── docs/
 │   ├── SPEC.md  ARCHITECTURE.md  GLOSSARY.md  DECISIONS.md  STATUS.md
 │   ├── AUDIT-2026-08-29.md       # defect register + task list — read after STATUS
-│   ├── adr/                      # 0001-0016
+│   ├── adr/                      # 0001-0017 (0010 is void — see 0011)
 │   ├── archive/                  # superseded documents, retained as evidence (R11)
 │   └── diagrams/
 ├── apps/
@@ -56,7 +56,7 @@ atlas/
 │   ├── worker/                   # Dramatiq entrypoint — main.py, tasks.py
 │   ├── cli/                      # Typer entrypoint — main.py, backup_restore.py
 │   ├── web/                      # React + TS dashboard
-│   └── renderer/                 # Remotion project (Node) — compositions, not yet invoked
+│   └── renderer/                 # Remotion project (Node) — compositions exist, nothing invokes them
 ├── packages/
 │   ├── atlas/src/atlas/
 │   │   ├── domain/
@@ -72,7 +72,8 @@ atlas/
 │   │   │   └── execution/        # Run, Step, Gate, Approval, RejectionFeedback, PipelineStage
 │   │   ├── application/
 │   │   │   ├── ports/            # every provider interface, plus repositories.py
-│   │   │   ├── usecases/         # create_run, approve_gate, reject_gate, get_run_status
+│   │   │   ├── usecases/         # create_run, approve_gate, reject_gate, get_run_status,
+│   │   │   │                     #   inspect_run (knowledge + telemetry read models)
 │   │   │   ├── agents/           # topic, research, extraction, verification, script,
 │   │   │   │                     #   storyboard, sound_design, judge, scheduler, models.py
 │   │   │   ├── pipeline/         # runner.py — the 18-stage orchestrator
@@ -96,6 +97,7 @@ atlas/
 │   │   └── prompts/              # versioned prompt templates — never inline strings
 │   └── tokens/                   # design tokens shared by dashboard AND video
 ├── tests/                        # unit/ · integration/
+├── Dockerfile                    # api + worker image; installs ffmpeg for StubRenderer
 ├── docker-compose.yml  Caddyfile # deployment lives at the repository root, not in deploy/
 └── var/                          # local blobs, snapshots, renders — gitignored
 ```
@@ -108,8 +110,49 @@ makes this possible, and it means the dashboard and the videos cannot drift apar
 `__init__.py`; they are implicit namespace packages and import normally. Verified against the tree on
 2026-08-31.
 
+`apps/api/routes/` holds `health.py`, `runs.py`, `gates.py` and `quota.py`. There is no `events.py`:
+the SSE route it defined answered any run ID with two hardcoded messages and had no consumer, so it
+was deleted rather than labelled (ADR-0017 §5, defect **V-12**). The dashboard polls every five
+seconds through react-query.
+
 `platform/` is deliberately narrow — configuration, logging, clock, ID generation, typed errors, caching,
 quota accounting. If something lands there that has business meaning, it belongs in `domain/` instead.
+
+---
+
+## 2.1 The HTTP surface
+
+Transcribed from `app.openapi()` on 2026-08-31. **This table is the contract the dashboard codes
+against.** It exists because no document previously stated the API surface, and the dashboard
+consequently invented one: its wire types declared `RunItem.current_stage`, `GateItem.stage`,
+`GateItem.metadata` and a gate status of `'open'`, none of which exist, and it called `/gates`, which
+is not a route (defect **V-03**). If you change a route, change this table in the same commit.
+
+| Method | Path | Request | Response | Auth |
+|---|---|---|---|---|
+| `GET` | `/health` | — | `{status, database, service, timestamp}` | none |
+| `POST` | `/runs` | `CreateRunRequest` — `topic_id` **required**, `channel_id`, `actor_id`, `focus_id?` | `RunResponse` · 201 | `verify_api_key` |
+| `GET` | `/runs` | `?limit=1..200` | `list[RunResponse]` | `verify_api_key` |
+| `GET` | `/runs/{run_id}` | — | `RunResponse` | `verify_api_key` |
+| `GET` | `/runs/{run_id}/steps` | — | `list[StepResponse]` | none |
+| `GET` | `/runs/{run_id}/gates` | — | `list[GateResponse]` | none |
+| `GET` | `/runs/{run_id}/knowledge` | — | `RunKnowledgeView` — the Run's current Knowledge Object with every Claim resolved to Evidence, Source and Snapshot | `verify_api_key` |
+| `GET` | `/runs/{run_id}/telemetry` | `?limit=1..500` | `list[TelemetryEvent]` — Steps and metered model calls merged, newest first | `verify_api_key` |
+| `GET` | `/gates/pending` | — | `list[GateResponse]` | `verify_api_key` |
+| `POST` | `/gates/{gate_id}/approve` | `ApproveGateRequest` — `actor_id` | `ApprovalResponse`; resumes the Run | `verify_api_key` |
+| `POST` | `/gates/{gate_id}/reject` | `RejectGateRequest` — `target_ref`, `rubric_dimension`, `reason`, `action`, `actor_id`, all required (SPEC §7) | `ApprovalResponse` | `verify_api_key` |
+| `GET` | `/quota` | — | `QuotaStatusResponse` — per provider, computed from `quota_ledger` | `verify_api_key` |
+
+Response models live in `apps/api/schemas.py`, except `RunKnowledgeView` and `TelemetryEvent`, which
+are the application-layer view models returned by `application/usecases/inspect_run.py` and are used
+directly as `response_model` rather than re-declared — one shape, not two.
+
+Two things this table records honestly:
+
+- **`verify_api_key` is a no-op unless `ATLAS_API_AUTH_ENABLED=true`.** It returns `"anonymous"` when
+  auth is disabled, which is the default. The "Auth" column names the dependency, not a guarantee.
+- **`/runs/{run_id}/steps` and `/runs/{run_id}/gates` have no auth dependency at all**, unlike every
+  neighbour. That is an inconsistency, not a decision — task **T-57**.
 
 ---
 
@@ -157,9 +200,17 @@ Remotion's Chromium renderer. These cannot run concurrently without thrashing, s
 named lease from `resource_locks` with a TTL and a priority, and the queue serializes it. Owning the
 scheduler is what makes this expressible at all — a hosted queue would not know about the constraint.
 
-**Rate limiting.** A token bucket per provider, persisted, shared across workers. Free-tier limits are
-per-minute and per-day, so both windows are tracked, and a Step that cannot acquire a token is deferred
-rather than failed.
+**Rate limiting.** Both windows — per-minute and per-day — are computed from `quota_ledger` on every
+check, so the budget is shared across the API, the worker and every CLI invocation. This is stated as
+implementation, not aspiration, because until 2026-08-31 it was aspiration: the counters lived in
+process memory and the ledger was written and never read, which handed each new process a full daily
+budget on a tier that allows twenty requests (defect **V-04**, D115).
+
+One thing this paragraph has always over-promised and still does: a Step that cannot acquire budget is
+**failed**, not deferred. `check_rate_limits` raises `RateLimitExceededError` or `QuotaExceededError`
+and `_execute_stage` marks the Step and the Run failed. Deferral needs a scheduler that can re-queue on
+a window boundary; nobody has built it. ADR-0004 §"Degradation" describes suspend-and-notify as the
+intent — task **T-29** owns closing the gap.
 
 ---
 
@@ -181,7 +232,7 @@ sequenceDiagram
     W->>T0: fetch sources, snapshot bytes
     W->>T12: extract claims (Tier 2), filter (Tier 1)
     W->>Q: Knowledge Object v1, suspend at manual gate
-    API-->>O: SSE: approval required
+    API-->>O: Run suspended — operator polls /gates/pending
     O->>API: approve
     Q->>W: Step: script → timing → assets
     W->>Q: suspend at asset approval gate
@@ -190,11 +241,16 @@ sequenceDiagram
     W->>R: render both targets (GPU lease held)
     W->>W: quality gate — hard threshold
     W->>Q: suspend at final approval
-    API-->>O: SSE: render ready
+    API-->>O: Run suspended — final approval gate pending
 ```
 
-Every arrow to a model is metered first. Every arrow to a source is snapshotted. Every artifact records
-the versions that produced it.
+Every arrow to a model is metered first — enforced by Guard 9 and by `check_rate_limits` reading
+`quota_ledger`, not by convention (ADR-0017, defect V-02). Every arrow to a source is snapshotted.
+Every artifact records the versions that produced it.
+
+The two dashed arrows are the operator learning that a Run has suspended. They are drawn as pushes
+because that is the intent; today they are a 5-second poll of `/gates/pending`, and no server push
+exists (**T-56**).
 
 ---
 
@@ -288,9 +344,7 @@ weight. The ledger exists from the first model call, because it cannot be recons
 
 ## 8. Frontend
 
-React 19 + TypeScript strict + Tailwind + shadcn/ui, dark-mode first. TanStack Query owns server state;
-Zustand holds the small amount of genuine client state. SSE for live queue, Run, and log updates —
-one-directional, proxy-transparent, no connection state to manage.
+React 19 + TypeScript strict + Tailwind, dark-mode first. TanStack Query owns server state.
 
 The **approval queue is the most important screen in the application**, because it is where the operator
 spends their ten minutes per video. It is built as a keyboard-driven review surface: navigate Beats and
@@ -301,6 +355,21 @@ Sections follow `prompt.md`: Dashboard, Topics, Knowledge Database, Knowledge Gr
 Agent Monitor, Video Queue, Assets, Publishing, Analytics, Provider Settings, Approval Queue, Logs,
 Configuration, Documentation.
 
+### 8.1 What the frontend is today, as against the paragraphs above
+
+The two paragraphs above are the target. Measured on 2026-08-31, four tabs exist — Dashboard,
+Approval Queue, Knowledge, Telemetry & Quota — and every panel in them renders a row returned by a
+route in §2.1 or an error. Neither Zustand nor shadcn/ui is installed; TanStack Query's 5-second
+poll is the whole of the "live" story, and the SSE route that claimed to provide it was a stub with
+no consumer (**V-12**, D121, task **T-56**).
+
+The approval queue is **not yet** the review surface described above. It shows the Gate rows that
+exist and links to the Run's Knowledge Object and telemetry; it cannot show the asset candidates, the
+Script beats or the Quality Report the operator is deciding on, because no route returns them. Panels
+that claimed to show them were fixtures and were deleted (**V-03**, task **T-59**). An operator
+approving an asset-selection gate today is approving something they cannot see — that is the honest
+statement of where this screen stands, and **T-59** is how it stops being true.
+
 ---
 
 ## 9. Testing
@@ -310,11 +379,22 @@ Configuration, Documentation.
 | Unit | No network, no database, no filesystem, no GPU. Pure domain logic and policies. |
 | Integration | Real Postgres in a container. Real repositories. Fake providers. |
 | End-to-end | Whole pipeline against `adapters/fakes/`. Must finish in under a minute, cost nothing, and run on every commit. |
-| Cassettes | Real provider responses recorded once, replayed thereafter. Recording is manual and explicit. |
-| Golden | The hand-scored quality set. Re-run on every prompt change to catch quality regressions. |
+| Cassettes | Real provider responses recorded once, replayed thereafter. Recording is manual and explicit. **Does not exist** — task **T-58**. |
+| Golden | The hand-scored quality set. Re-run on every prompt change to catch quality regressions. **Does not exist** — task **T-36**. |
+| Structural guards | Nine AST-and-text checks in `tests/unit/test_no_fabrication.py`, three of which also run in the commit hook. Guards 1–7 cover Python; **8 covers `apps/web/src` and `apps/renderer/src`**; 9 covers model metering. ADR-0014, ADR-0017. |
+| Browser | Asserts what the dashboard renders, as against what its sources contain. **Does not exist** — task **T-55**, and its absence is why defect V-03 stood for a phase. |
 
 The fakes package is load-bearing infrastructure, not test scaffolding. If e2e tests need real providers,
 they will quietly stop being run, and the pipeline will rot.
+
+Two rows above are marked *does not exist*, and one consequence is worth stating rather than leaving
+to be inferred: **seven wired adapters reach the network and none of them has a test.**
+`WikipediaSearch`, `HttpSourceFetcher`, `WikimediaCommonsSearch`, `InternetArchiveSearch`,
+`OllamaEmbedder`, `GeminiLlm` and `FreesoundLibrary` are verified by hand and by nothing else, because
+a unit test may not touch the network and there is nothing to replay.
+`tests/integration/test_production_adapters.py` covers the six wired adapters that need no network,
+including `Container` itself — before it existed, `LocalStorage` was the only adapter the container
+wires that any test touched (defect V-07).
 
 ---
 
@@ -435,6 +515,8 @@ findings in `docs/AUDIT-2026-08-29.md` §15.
 | `ports/embedder.py` | **Tree.** The port gained `provider` and `model_id`, so a metered embedding names the adapter that ran (Invariant 7). | V-02, D110 |
 | `platform/quota.py` | **Tree.** In-memory counters and their lock deleted; both windows are computed from `quota_ledger`, which is what ADR-0004 always said. | V-04, D115 |
 | `apps/worker/main.py` | **Tree.** The poll loop that polled nothing is deleted. | V-08, D118 |
+| `apps/api/routes/events.py` | **Tree.** Deleted. The SSE route answered any run ID with two hardcoded messages and had no consumer. | V-12, D121 |
+| `ARCHITECTURE.md` §2.1 | **Document.** The HTTP surface had never been written down anywhere, which is why the dashboard coded against an API it invented. | V-03, D122 |
 
 ### 11.8 Open structural items carried forward
 

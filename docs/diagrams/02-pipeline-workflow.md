@@ -131,6 +131,17 @@ The numbering is `PipelineStage` / `STAGE_SEQUENCE` in `application/pipeline/run
 > One nuance the boxes cannot show: stage 7's gate suspends *before* an angle exists, so the
 > operator approves "proceed to scripting", not a named angle. The angle is selected inside stage 8
 > (**D92**, SPEC §6).
+>
+> **Re-verified 2026-08-31, second pass.** Two model calls the diagram does not draw are now metered
+> like the rest: **stage 1** calls the topic-discovery model, and **stage 13** embeds twice while
+> pairing beats to candidates. Both reached a provider with no `QuotaManager` at all until this date
+> — no rate check, no `model_calls` row, no ledger entry (defect **V-02**, D109, D110). Every arrow
+> into a model on this page is metered before it is issued.
+>
+> Also unchanged and still true: **stage 13 re-searches** for image candidates rather than loading
+> what stage 11 found, so the set the operator approved at the stage 12 gate is not provably the set
+> the Storyboard drew from (task **T-54**) — and the operator cannot see that set at all, because no
+> route returns it (task **T-59**).
 
 ---
 
