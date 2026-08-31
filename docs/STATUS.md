@@ -1,7 +1,7 @@
 # Status
 
 **Last updated:** 2026-08-31 (independent verification session)
-**HEAD:** `c776b59`, plus an uncommitted working tree — see §0.
+**HEAD:** `714cade` — see §1.
 
 This file separates **decided** from **done**. Everything else in `docs/` records what Atlas *will*
 be; this records where it actually stands. It is rewritten from measurement at the end of every
@@ -14,8 +14,8 @@ current claim.
 
 ## 0. Measured baseline
 
-Measured on 2026-08-31, in the session that wrote this section, at HEAD `c776b59` plus the working
-tree described in §1.
+Measured on 2026-08-31, in the session that wrote this section, on the tree that became commit
+`714cade`.
 
 ```
 $ uv run ruff check .
@@ -43,10 +43,11 @@ were produced locally and nothing has independently verified them.
 
 ## 1. Working tree state
 
-HEAD is `c776b59`. The working tree is **not committed and not clean**: it carries the 2026-08-29
-Stage C work plus this session's remediation. The audit's §12.3 claim that "Stage C is complete and
-committed. The working tree is clean" was false when written and is recorded as finding **A1** in
-audit §13.
+HEAD is `714cade` on branch `docs/audit-2026-08-29`; the working tree is clean. That commit carries
+the 2026-08-29 Stage C work — which had never been committed, despite audit §12.3 claiming it was —
+together with this session's remediation. The false claim is recorded as finding **A1** in audit
+§13. The branch is **three commits ahead of `main` and has never been pushed**, which is why CI has
+still never run.
 
 ---
 
