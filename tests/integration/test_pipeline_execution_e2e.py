@@ -17,6 +17,7 @@ from atlas.adapters.fakes.providers import (
     FakeSoundLibrary,
     FakeSourceFetcher,
 )
+from atlas.adapters.notify.logging_notifier import LoggingNotifier
 from atlas.adapters.persistence.repositories.execution_repository import ExecutionRepository
 from atlas.adapters.persistence.repositories.focus_repository import FocusRepository
 from atlas.adapters.persistence.repositories.knowledge_repository import KnowledgeRepository
@@ -277,6 +278,30 @@ async def test_full_18_stage_pipeline_traversal_with_human_gates(
     )
     assert script_calls.scalar_one() == 1
 
+    # Invariant 8: every model call is metered, including the two that were not.
+    # Stage 1 calls the topic discovery model and stage 13 embeds twice; both
+    # used to reach a provider with no QuotaManager at all (defect V-02).
+    metered = await db_session.execute(
+        text("SELECT prompt_version FROM model_calls WHERE run_id = :run_id"),
+        {"run_id": run.id},
+    )
+    metered_versions = [row[0] for row in metered]
+    assert "topic_discovery_v1" in metered_versions
+    assert metered_versions.count("embedding_v1") == 2
+
+    # Each metered call left a ledger entry in both windows, so a second process
+    # inherits the spend rather than starting fresh.
+    ledger = await db_session.execute(
+        text(
+            "SELECT window_type, SUM(requests_consumed) FROM quota_ledger "
+            "WHERE run_id = :run_id GROUP BY window_type"
+        ),
+        {"run_id": run.id},
+    )
+    by_window: dict[str, int] = {row[0]: int(row[1]) for row in ledger.all()}
+    assert by_window["minute"] == len(metered_versions)
+    assert by_window["day"] == len(metered_versions)
+
     # Render artifacts exist for both targets, with captions that carry real cues.
     artifacts = await prod_repo.list_render_artifacts(run.id)
     assert {a.render_target for a in artifacts} == {
@@ -452,3 +477,50 @@ async def test_gpu_semaphore_concurrency(db_session: AsyncSession) -> None:
     # 4. Now second task can acquire
     lock2 = await exec_repo.acquire_lock("gpu", holder_id="task_render_2", ttl_seconds=60)
     assert lock2.holder_id == "task_render_2"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_suspends_at_a_gate_with_the_production_notifier(
+    db_session: AsyncSession, test_storage: LocalStorage
+) -> None:
+    """Defect V-01: the notifier the container wires must survive a real suspension.
+
+    Every other test in this file injects `FakeNotifier`, which is why
+    `LoggingNotifier` shipped raising `TypeError` on the first gate of every
+    production Run. This is that test's positive twin at the call site.
+    """
+    exec_repo = ExecutionRepository(db_session)
+    focus_repo = FocusRepository(db_session)
+    src_repo = SourceRepository(db_session)
+    pub_repo = PublishingRepository(db_session)
+
+    runner = PipelineRunner(
+        execution_repo=exec_repo,
+        knowledge_repo=KnowledgeRepository(db_session),
+        focus_repo=focus_repo,
+        source_repo=src_repo,
+        publishing_repo=pub_repo,
+        production_repo=ProductionRepository(db_session),
+        storage=test_storage,
+        llm=FakeLlm(),
+        embedder=FakeEmbedder(),
+        search=FakeSearch(),
+        source_fetcher=FakeSourceFetcher(),
+        image_search=FakeImageSearch(),
+        image_gen=FakeImageGenerator(),
+        sound_lib=FakeSoundLibrary(),
+        renderer=FakeRenderer(test_storage),
+        notifier=LoggingNotifier(),
+        publisher=FakePublisher(),
+        quota_mgr=QuotaManager(exec_repo),
+    )
+
+    await _seed_topic_and_channel(focus_repo, src_repo, pub_repo, "topic_notifier_probe")
+    run = await CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker()).execute(
+        topic_id="topic_notifier_probe", channel_id="origins", actor_id="operator_alice"
+    )
+
+    suspended = await runner.run_pipeline(run.id)
+
+    assert suspended.status == RunStatus.SUSPENDED
+    assert len(await exec_repo.list_pending_gates()) == 1

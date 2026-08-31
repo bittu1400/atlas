@@ -235,3 +235,79 @@ async def test_gate_rejection_flow_via_api(
     # Run is in reworking state
     run_status = (await api_client.get(f"/runs/{run_id}")).json()["status"]
     assert run_status == "reworking"
+
+
+@pytest.mark.asyncio
+async def test_knowledge_endpoint_returns_the_stored_traceability_chain(
+    api_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """`GET /runs/{id}/knowledge` is what the Knowledge panel reads (defect V-03).
+
+    Before this endpoint existed the dashboard drew that panel from four
+    hardcoded claims with invented sources and invented snapshot hashes. Every
+    field asserted here resolves to a row: Claim -> Evidence -> Source ->
+    Snapshot (Invariant 1).
+    """
+    await _seed_api_topic(db_session, "topic_api_knowledge")
+
+    create_resp = await api_client.post(
+        "/runs", json={"topic_id": "topic_api_knowledge", "channel_id": "origins"}
+    )
+    run_id = create_resp.json()["id"]
+
+    # A Run suspended at stage 2 has produced no Knowledge Object. Say so, do
+    # not invent one.
+    empty = (await api_client.get(f"/runs/{run_id}/knowledge")).json()
+    assert empty["claims"] == []
+    assert empty["ko_id"] is None
+
+    # Drive the Run past extraction and verification.
+    for _ in range(2):
+        pending = (await api_client.get("/gates/pending")).json()
+        if not pending:
+            break
+        await api_client.post(f"/gates/{pending[0]['id']}/approve", json={"actor_id": "op"})
+
+    resp = await api_client.get(f"/runs/{run_id}/knowledge")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["run_id"] == run_id
+    assert body["topic_id"] == "topic_api_knowledge"
+    assert body["ko_id"], "A Knowledge Object should exist once extraction has run"
+    assert body["claims"], "Extraction produced no claims"
+
+    for claim in body["claims"]:
+        assert claim["text"]
+        for evidence in claim["evidence"]:
+            assert evidence["quote"]
+            assert evidence["source_url"].startswith("http")
+            assert len(evidence["snapshot_sha256"]) == 64
+            assert evidence["retrieved_at"]
+
+
+@pytest.mark.asyncio
+async def test_telemetry_endpoint_reports_steps_and_metered_model_calls(
+    api_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """`GET /runs/{id}/telemetry` replaces six hardcoded log lines (defect V-03)."""
+    await _seed_api_topic(db_session, "topic_api_telemetry")
+
+    create_resp = await api_client.post(
+        "/runs", json={"topic_id": "topic_api_telemetry", "channel_id": "origins"}
+    )
+    run_id = create_resp.json()["id"]
+
+    resp = await api_client.get(f"/runs/{run_id}/telemetry")
+    assert resp.status_code == 200
+    events = resp.json()
+    assert events, "A Run that has executed a stage recorded nothing"
+
+    kinds = {e["kind"] for e in events}
+    assert "step" in kinds
+    # Stage 1 calls the topic discovery model, and that call is metered
+    # (Invariant 8) — it used to bypass the ledger entirely.
+    assert "model_call" in kinds
+    assert any(e["stage"] == "topic_discovery_v1" for e in events)
+
+    timestamps = [e["timestamp"] for e in events]
+    assert timestamps == sorted(timestamps, reverse=True)

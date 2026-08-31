@@ -70,7 +70,7 @@ class ScriptAgent:
         )
 
         route = RoutingPolicy.get_route(TaskKind.STORY_ANGLE_GENERATION)
-        self.quota_mgr.check_rate_limits(route.provider)
+        await self.quota_mgr.check_rate_limits(route.provider)
 
         request = LlmRequest(
             prompt=prompt_text,
@@ -136,7 +136,7 @@ class ScriptAgent:
         )
 
         route = RoutingPolicy.get_route(TaskKind.SCRIPT_WRITING)
-        self.quota_mgr.check_rate_limits(route.provider)
+        await self.quota_mgr.check_rate_limits(route.provider)
 
         request = LlmRequest(
             prompt=prompt_text,

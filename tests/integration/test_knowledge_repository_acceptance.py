@@ -31,10 +31,10 @@ from atlas.domain.knowledge.payload import KnowledgePayloadV1
 from atlas.platform.ids import (
     generate_claim_id,
     generate_evidence_id,
-    generate_ko_id,
     generate_snapshot_id,
     generate_source_id,
     generate_topic_id,
+    knowledge_object_id_for_topic,
 )
 from pydantic import HttpUrl
 from sqlalchemy.exc import IntegrityError
@@ -134,7 +134,7 @@ async def test_full_knowledge_object_and_traceability_lifecycle(
     )
 
     # 6. Genesis Revision: Create Knowledge Object v1
-    ko_id = generate_ko_id()
+    ko_id = knowledge_object_id_for_topic("topic_ko_acceptance")
     ko_v1 = KnowledgeObjectVersion(
         ko_id=ko_id,
         version=1,

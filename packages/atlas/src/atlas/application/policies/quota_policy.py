@@ -15,6 +15,8 @@ class TaskKind(StrEnum):
     """Categorized task kinds in the pipeline."""
 
     RETRIEVAL = "retrieval"
+    TOPIC_DISCOVERY = "topic_discovery"
+    EMBEDDING = "embedding"
     ENTITY_EXTRACTION = "entity_extraction"
     CLAIM_EXTRACTION = "claim_extraction"
     VERIFICATION = "verification"
@@ -44,6 +46,22 @@ class RoutingPolicy:
     DEFAULT_ROUTES: dict[TaskKind, ModelRoute] = {
         TaskKind.RETRIEVAL: ModelRoute(
             task=TaskKind.RETRIEVAL, tier=0, provider="fake", model_id="none", max_tokens=None
+        ),
+        TaskKind.TOPIC_DISCOVERY: ModelRoute(
+            task=TaskKind.TOPIC_DISCOVERY,
+            tier=2,
+            provider="gemini",
+            model_id="gemini-2.0-flash",
+            temperature=0.8,
+            max_tokens=2048,
+        ),
+        TaskKind.EMBEDDING: ModelRoute(
+            task=TaskKind.EMBEDDING,
+            tier=1,
+            provider="ollama",
+            model_id="nomic-embed-text",
+            temperature=0.0,
+            max_tokens=None,
         ),
         TaskKind.ENTITY_EXTRACTION: ModelRoute(
             task=TaskKind.ENTITY_EXTRACTION,

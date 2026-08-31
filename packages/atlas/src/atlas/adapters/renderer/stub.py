@@ -14,13 +14,13 @@ described artifact rather than a silently vertical one.
 import os
 import subprocess
 import tempfile
-import uuid
-from datetime import UTC, datetime
 
 from atlas.application.ports.renderer import Renderer
 from atlas.application.ports.storage import Storage
 from atlas.domain.media.models import RenderArtifact, RenderTarget, Storyboard
 from atlas.domain.script.models import TimingPlan
+from atlas.platform.clock import utc_now
+from atlas.platform.ids import generate_id
 from atlas.platform.logging import get_logger
 
 logger = get_logger("adapters.renderer.stub")
@@ -143,7 +143,7 @@ class StubRenderer(Renderer):
         video_key = await self.storage.put(video_bytes, "video/mp4")
 
         return RenderArtifact(
-            id=f"ra_{uuid.uuid4().hex[:8]}",
+            id=generate_id("ra"),
             run_id=run_id,
             storyboard_id=storyboard.id,
             render_target=target,
@@ -159,5 +159,5 @@ class StubRenderer(Renderer):
                 "timing_plan_id": storyboard.timing_plan_id,
                 "scene_count": len(storyboard.scenes),
             },
-            created_at=datetime.now(UTC),
+            created_at=utc_now(),
         )

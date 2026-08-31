@@ -1,13 +1,16 @@
-"""Quota Governance and Rate-Limiter Token Buckets.
+"""Quota Governance and Rate Limiting.
 
 As specified in Invariant 8, SPEC §11, and ADR-0004:
 - Quota is a first-class resource. Every model call is metered before invocation.
 - Tracks per-minute and per-day windows for free-tier providers.
 - Records metered calls to model_calls audit table and quota_ledger.
+
+The windows are computed from `quota_ledger` on every check, never from process
+memory. Atlas runs one process per CLI invocation and one per worker; an
+in-memory counter hands each of them a fresh daily budget, which on a 20
+requests/day tier is the same as having no limit at all (defect V-04).
 """
 
-import threading
-from datetime import datetime, timedelta
 from typing import Any
 
 from atlas.application.ports.repositories import ExecutionRepositoryPort
@@ -43,11 +46,10 @@ DEFAULT_PROVIDER_LIMITS: dict[str, dict[str, int]] = {
 
 
 class QuotaManager:
-    """Manages provider rate limits, token buckets, and quota ledger accounting.
+    """Manages provider rate limits and quota ledger accounting.
 
-    Thread-safe in-memory rate limiting with persistence to PostgreSQL `quota_ledger`.
-    In multi-worker deployments, workers record consumption to `quota_ledger` which
-    acts as the canonical distributed source of truth.
+    `quota_ledger` is the single source of truth for consumption: every check
+    reads it, so two workers and a CLI invocation share one budget.
     """
 
     def __init__(
@@ -57,55 +59,35 @@ class QuotaManager:
     ) -> None:
         self.execution_repo = execution_repo
         self.provider_limits = provider_limits or DEFAULT_PROVIDER_LIMITS
-        self._lock = threading.Lock()
-        # In-memory sliding window counters: {provider: [(timestamp, tokens)]}
-        self._minute_calls: dict[str, list[datetime]] = {}
-        self._daily_calls: dict[str, list[datetime]] = {}
-        self._daily_tokens: dict[str, int] = {}
-        self._daily_reset: dict[str, datetime] = {}
 
     def _get_limits(self, provider: str) -> dict[str, int]:
         return self.provider_limits.get(
             provider, self.provider_limits.get("fake", DEFAULT_PROVIDER_LIMITS["fake"])
         )
 
-    def check_rate_limits(self, provider: str, estimated_tokens: int = 100) -> None:
-        """Verify that provider rate limits allow an immediate model call."""
-        now = utc_now()
+    async def check_rate_limits(self, provider: str, estimated_tokens: int = 100) -> None:
+        """Verify that provider rate limits allow an immediate model call.
+
+        Reads the ledger rather than a process-local counter, so the limit holds
+        across the API, the worker and every CLI invocation.
+        """
         limits = self._get_limits(provider)
+        consumed = (await self.execution_repo.get_quota_consumption_summary()).get(provider, {})
 
-        with self._lock:
-            # 1. Check minute window (RPM)
-            minute_ago = now - timedelta(minutes=1)
-            calls = self._minute_calls.setdefault(provider, [])
-            # Prune old calls
-            self._minute_calls[provider] = [t for t in calls if t > minute_ago]
+        minute_requests = consumed.get("minute_requests", 0)
+        if minute_requests >= limits["rpm"]:
+            logger.warning("quota.rate_limit_hit", provider=provider, count=minute_requests)
+            raise RateLimitExceededError(provider)
 
-            if len(self._minute_calls[provider]) >= limits["rpm"]:
-                logger.warning(
-                    "quota.rate_limit_hit",
-                    provider=provider,
-                    count=len(self._minute_calls[provider]),
-                )
-                raise RateLimitExceededError(provider)
+        daily_requests = consumed.get("daily_requests", 0)
+        if daily_requests >= limits["rpd"]:
+            logger.error("quota.daily_requests_exhausted", provider=provider)
+            raise QuotaExceededError(provider, "daily requests")
 
-            # 2. Check daily window (RPD and TPD)
-            start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            last_reset = self._daily_reset.get(provider, start_of_day)
-            if last_reset < start_of_day:
-                self._daily_calls[provider] = []
-                self._daily_tokens[provider] = 0
-                self._daily_reset[provider] = start_of_day
-
-            daily_calls = self._daily_calls.setdefault(provider, [])
-            if len(daily_calls) >= limits["rpd"]:
-                logger.error("quota.daily_requests_exhausted", provider=provider)
-                raise QuotaExceededError(provider, "daily requests")
-
-            daily_tokens = self._daily_tokens.setdefault(provider, 0)
-            if daily_tokens + estimated_tokens > limits["tpd"]:
-                logger.error("quota.daily_tokens_exhausted", provider=provider)
-                raise QuotaExceededError(provider, "daily tokens")
+        daily_tokens = consumed.get("daily_tokens", 0)
+        if daily_tokens + estimated_tokens > limits["tpd"]:
+            logger.error("quota.daily_tokens_exhausted", provider=provider)
+            raise QuotaExceededError(provider, "daily tokens")
 
     async def record_invocation(
         self,
@@ -126,13 +108,6 @@ class QuotaManager:
         now = utc_now()
         total_tokens = input_tokens + output_tokens
 
-        # If not cached, update in-memory counters with lock
-        if not cached:
-            with self._lock:
-                self._minute_calls.setdefault(provider, []).append(now)
-                self._daily_calls.setdefault(provider, []).append(now)
-                self._daily_tokens[provider] = self._daily_tokens.get(provider, 0) + total_tokens
-
         # Record ModelCall audit row
         model_call = ModelCall(
             id=generate_id("call"),
@@ -151,35 +126,22 @@ class QuotaManager:
             cost_usd=0.0,
             created_at=now,
         )
-        if self.execution_repo:
-            await self.execution_repo.record_model_call(model_call)
+        await self.execution_repo.record_model_call(model_call)
 
-            # If not cached, record QuotaLedger entries for minute and day windows
-            if not cached and total_tokens > 0:
-                minute_start = now.replace(second=0, microsecond=0)
-                day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-                # Minute ledger entry
+        # A cached response costs no request; an uncached one costs a request even
+        # when the provider reports no tokens, so requests are counted regardless.
+        if not cached:
+            now_windows = (
+                (WindowType.MINUTE, now.replace(second=0, microsecond=0)),
+                (WindowType.DAY, now.replace(hour=0, minute=0, second=0, microsecond=0)),
+            )
+            for window_type, window_start in now_windows:
                 await self.execution_repo.record_quota_consumption(
                     QuotaLedgerEntry(
                         id=generate_id("qle"),
                         provider=provider,
-                        window_type=WindowType.MINUTE,
-                        window_start=minute_start,
-                        tokens_consumed=total_tokens,
-                        requests_consumed=1,
-                        run_id=run_id if run_id != "run_unassigned" else None,
-                        created_at=now,
-                    )
-                )
-
-                # Day ledger entry
-                await self.execution_repo.record_quota_consumption(
-                    QuotaLedgerEntry(
-                        id=generate_id("qle"),
-                        provider=provider,
-                        window_type=WindowType.DAY,
-                        window_start=day_start,
+                        window_type=window_type,
+                        window_start=window_start,
                         tokens_consumed=total_tokens,
                         requests_consumed=1,
                         run_id=run_id if run_id != "run_unassigned" else None,

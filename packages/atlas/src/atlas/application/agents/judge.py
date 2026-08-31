@@ -70,7 +70,7 @@ class JudgeAgent:
 
         # 3. Route call and meter quota
         route = RoutingPolicy.get_route(TaskKind.QUALITY_JUDGING)
-        self.quota_mgr.check_rate_limits(route.provider)
+        await self.quota_mgr.check_rate_limits(route.provider)
 
         request = LlmRequest(
             prompt=prompt_text,

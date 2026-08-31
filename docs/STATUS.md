@@ -1,6 +1,6 @@
 # Status
 
-**Last updated:** 2026-08-31 (independent verification session, then a documentation reconciliation pass)
+**Last updated:** 2026-08-31 (second independent verification session — audit §15)
 **Branch:** `docs/audit-2026-08-29` — see §1.
 
 This file separates **decided** from **done**. Everything else in `docs/` records what Atlas *will*
@@ -14,46 +14,54 @@ current claim.
 
 ## 0. Measured baseline
 
-Measured on 2026-08-31, in the session that wrote this section, on the tree of commit `714cade`
-(`fix(pipeline): persist production artifacts…`). The commits after it change documentation only —
-`git diff 714cade..HEAD --stat -- ':!docs' ':!*.md'` shows the test rename and nothing else — so the
-three numbers below still hold. **Re-run them anyway before quoting them** (**R7**).
+Measured on 2026-08-31, in the session that wrote this section, after the V-01 – V-11 remediation.
+**Re-run them before quoting them** (**R7**).
 
 ```
 $ uv run ruff check .
 All checks passed!
 
 $ uv run mypy .
-Success: no issues found in 158 source files
+Success: no issues found in 161 source files
 
-$ uv run pytest --tb=no
-122 passed in 13.08s
+$ uv run pytest --tb=short
+161 passed in 16.85s
+
+$ uv run pre-commit run --all-files
+Ruff Lint Check..........................................................Passed
+Ruff Format Check........................................................Passed
+Anti-Fabrication Structural Guard........................................Passed
+
+$ pnpm -r build
+packages/tokens · apps/renderer · apps/web — 3 of 3 built
+
+$ uv run alembic upgrade head          # against a fresh `atlas` database
+7 migrations applied, 30 tables + alembic_version
 ```
 
-On 2026-08-31 there are **no `xfail` markers left in the suite**. Every guard that previously stood
-as a known-failing marker — Guard 2 (fakes in the production container), Guard 4 (stubs wearing real
-provider names), the STATUS honesty check, and the renderer-provenance test — now asserts a
-behaviour that holds.
+There are no `xfail` markers in the suite.
+
+**The three headline numbers held when this session re-measured the previous one's.** What did not
+hold was the claim they were taken to support. The suite exercises the pipeline **against fakes**;
+until this session no test constructed `Container` or called any adapter it wires except
+`LocalStorage`. The first production adapter substituted into a real Run — `LoggingNotifier` — raised
+`TypeError` at the first gate of every Run. That is defect **V-01**, and audit §15 has the rest.
 
 **CI has still never run a single check.** `gh run list` on 2026-08-31 shows two runs, both
 `failure`, both from 2026-08-26, both predating the `uv sync --all-extras` fix. `ci.yml` triggers
 only on push to `main` or a pull request into `main`, and the branch `docs/audit-2026-08-29` has
-never been pushed. Closing **T-00** and **T-11** needs an operator to push (D82). The numbers above
-were produced locally and nothing has independently verified them.
+never been pushed. Closing **T-00** and **T-11** needs an operator to push (D82). Every number above
+was produced locally and nothing has independently verified it.
 
 ---
 
 ## 1. Working tree state
 
-The working tree is clean on branch `docs/audit-2026-08-29`. Commit `714cade` carries the 2026-08-29
-Stage C work — which had never been committed, despite audit §12.3 claiming it was — together with
-this session's B1–B9 remediation; the commits after it are documentation, plus one test rename
-(**D107**). The false "committed and clean" claim is recorded as finding **A1** in audit §13.
+Clean on branch `docs/audit-2026-08-29`. The most recent behavioural commit is the V-01 – V-11
+remediation described in audit §15; before it, `714cade` carried the B1 – B9 work.
 
-This file deliberately no longer names its own HEAD. A document that states the hash of the commit
-containing it is wrong the moment it is committed, and the last two sessions each produced a
-follow-up commit whose only purpose was to correct that hash. `git log --oneline -5` is the source
-of truth.
+This file deliberately does not name its own HEAD. A document that states the hash of the commit
+containing it is wrong the moment it is committed. `git log --oneline -5` is the source of truth.
 
 **The branch has never been pushed**, and is several commits ahead of `main`. That is why CI has
 still never run a single check — see §0.
@@ -76,12 +84,25 @@ identity row plus `claim_versions`, each version carrying the actor and the reas
 gates, approvals, resource locks, idempotency keys and the quota ledger. A Run traverses every stage
 against fakes, suspends at each of the six manual/hybrid gates, and resumes.
 
-**Phase 4 · Frontend + CLI** — CLI parity is real and tested. The dashboard exists
-(`apps/web`) and builds, but no test drives it; treat its behaviour as unverified.
+**Phase 4 · Frontend + CLI** — CLI parity is real and tested. The dashboard (`apps/web`) builds and
+now reads the API: Runs, pending Gates, quota, and two endpoints added in this session
+(`/runs/{id}/knowledge`, `/runs/{id}/telemetry`). Every panel renders a database row or an error —
+until 2026-08-31 five of its components rendered invented claims, invented snapshot hashes and an
+invented telemetry feed, and its API client answered an unreachable backend with fabricated Runs and
+a fabricated passing quality report (defect **V-03**, audit §15.4). **No test drives the browser**;
+Guard 8 asserts the *sources* contain no fixture, not that the UI behaves. Treat its rendering as
+unverified.
 
 **Phase 5 · Agents** — complete. Topic discovery, research, extraction, verification, story angle,
 script, storyboard, sound design and quality judge. An ORIGINS Topic yields a source-traced
 Knowledge Object and a Script whose every beat cites verified claims.
+
+**The production wiring is exercised.** `tests/integration/test_production_adapters.py` constructs
+`Container`, asserts it resolves no port to a fake, and runs `StubRenderer` (both aspect ratios,
+real ffmpeg), `StubPublisher`, `StubImageGenerator` and `LoggingNotifier`. The network-backed
+adapters — `WikipediaSearch`, `HttpSourceFetcher`, `WikimediaCommonsSearch`,
+`InternetArchiveSearch`, `OllamaEmbedder`, `GeminiLlm`, `FreesoundLibrary` — remain uncovered; see
+§3.
 
 **The pipeline reaches stage 18.** `test_full_18_stage_pipeline_traversal_with_human_gates` drives a
 Run from creation to `completed` through all six human gates and then asserts, against the database:
@@ -89,7 +110,9 @@ every claim in the Knowledge Object resolves to evidence with a source and a sna
 cites only claims from that Knowledge Object; exactly one `script_generation_v1` model call was
 metered for the run; the storyboard references the persisted script and timing plan; render
 artifacts exist for both aspect ratios with WebVTT captions carrying real cues; publication ran once
-per artifact; and every `model_calls` row records `provider='fake'`, the adapter that actually ran.
+per artifact; every `model_calls` row records `provider='fake'`, the adapter that actually ran; the stage 1 topic
+discovery call and both stage 13 embedding calls are metered with matching `quota_ledger` entries in
+the minute and day windows.
 
 ### 2.1 Phase numbering — SPEC §15 is the numbering (D58, T-38)
 
@@ -127,7 +150,10 @@ reachable from `Container` and are listed as orphans under audit task **T-28**.
 | 5 · No provider SDK outside its adapter | AST guards 1–4 over `adapters/` | `tests/unit/test_no_fabrication.py` |
 | 7 · Every artifact records how it was made | `model_calls` provenance taken from the adapter that executed; production artifacts persisted | `test_model_call_provenance_matches_the_adapter_that_ran` |
 | 9 · AI imagery needs human approval | An `Approval` row on the asset-selection gate, resolved by step ID | `test_ai_generated_asset_cannot_be_used_without_approval` **and** `test_ai_generated_asset_is_usable_once_a_human_approves_the_gate` |
-| 10 · Licenses enforced by a gate | `LicensePolicy.validate_asset_license` at asset discovery and storyboard cuts | `test_guard_6_policy_validation_methods_have_production_callers` |
+| 8 · Every model call is metered | Every agent holding an LLM or Embedder port takes a `QuotaManager`; `check_rate_limits` reads `quota_ledger` | `test_guard_9_every_agent_that_calls_a_model_holds_a_quota_manager`, `tests/integration/test_quota_enforcement.py`, and the end-to-end assertions on `topic_discovery_v1` and `embedding_v1` |
+| 10 · Licenses enforced by a gate | `LicensePolicy.validate_asset_license` at asset discovery and storyboard cuts, over a canonicalized license identifier | `test_guard_6_policy_validation_methods_have_production_callers`, plus 19 parametrized dialect tests |
+| R4 · No fixture reads as a fact, in any language | AST guard over Python fakes; text guard over `apps/web/src` and `apps/renderer/src` | `test_guard_7_*` and `test_guard_8_*` |
+| R5/R8 · A failed gate action is never shown as a decision | `ApprovalQueue` surfaces the error and records nothing | `test_guard_8_gate_actions_do_not_report_success_on_failure` |
 
 ---
 
@@ -146,7 +172,19 @@ a feature.
   placeholder bytes. No diffusers pipeline is loaded. It has no caller in the pipeline.
 - **The knowledge system (SPEC Phase 6).** Graph, novelty check and impact index beyond
   `claim_usages` are not implemented. `pgvector` is not installed and no vector column exists.
-- **Cassettes and the golden set.** Neither exists; `docs/ARCHITECTURE.md` §9 describes both.
+- **Cassettes and the golden set.** Neither exists; `docs/ARCHITECTURE.md` §9 describes both. This
+  is why no test covers a network-backed adapter: a unit test never touches the network, and there
+  is nothing to replay. `WikipediaSearch`, `HttpSourceFetcher`, `WikimediaCommonsSearch`,
+  `InternetArchiveSearch`, `OllamaEmbedder`, `GeminiLlm` and `FreesoundLibrary` are verified only by
+  hand.
+- **Any browser test.** The dashboard's sources are guarded against fixtures; nothing renders it and
+  asserts what appears. Playwright, jsdom and a component runner are all absent.
+- **The asset, script-beat and quality-rubric review panels.** They existed, drawn from a
+  `gate.metadata` field the API does not return, and were deleted with the rest of **V-03**. Bringing
+  them back means endpoints that return an approved Run's asset candidates, script beats and quality
+  report — not fixtures (**D111**, audit §15.7).
+- **A real-provider run.** `docker compose up` now builds, but no Run has ever executed against
+  Gemini, Ollama or Freesound end to end. **T-34**, still sequenced after T-29 and T-30.
 - **A `blobs` table.** Blobs are written to `var/blobs/sha256/…` with no database row, so there is
   no reference count and no deduplication bookkeeping.
 - **YAML configuration.** Routing policy and gate defaults are Python dicts; style and research
@@ -167,7 +205,8 @@ These are real and are not being hidden; each is recorded with the decision that
   by `select_story_angle`. **D92**.
 - **`trace_id` is never bound into the logging context.** The column and the structlog processor
   both exist; nothing connects them, so log lines do not carry it.
-- **Model IDs and the Ollama base URL are hardcoded.** ADR-0012 §3, §4; defects C-08, R-05.
+- **Model IDs are hardcoded.** ADR-0012 §3; defect C-08. The Ollama base URL is no longer among
+  them — it is `Settings.ollama_base_url`, read from `OLLAMA_URL` (**D116**, defect V-05).
 - **Layering is enforced for `domain/` only.** `tests/unit/test_layering_boundaries.py` does not
   check the `adapters → application` direction. ADR-0014.
 - **No repair attempt on malformed structured output.** `ARCHITECTURE.md` §5 promises one; both LLM
@@ -189,15 +228,26 @@ These are real and are not being hidden; each is recorded with the decision that
   always suspend. Harmless, but undocumented dead code until now. Audit task **T-53**.
 - **No `blobs` table.** Blobs are written to `var/blobs/sha256/…` with no row, so there is no
   reference count and no deduplication bookkeeping. `ARCHITECTURE.md` §6 and §11.8, defect A-03.
+- **Quota is checked with one extra query per model call.** `check_rate_limits` reads
+  `quota_ledger` every time rather than caching a window, because a cached window is what defect
+  **V-04** was. At Atlas's call volume — single digits per Run — the query cost is not worth
+  optimising away, and doing so would need a cache invalidated by other processes. **D115**.
+- **The minute window is coarse.** Ledger rows bucket by `window_start=now.replace(second=0)` and the
+  summary selects `window_start >= now - 1 minute`, so the RPM check spans between one and two
+  wall-clock minutes of rows. It over-counts, never under-counts, which is the safe direction for a
+  free tier.
+- **The approval screen shows Gate rows and nothing else.** An operator can see which Gate is
+  pending and open the Run's Knowledge Object and telemetry, but cannot review asset candidates,
+  script beats or the quality report in place — §3, **D111**.
 
 ---
 
 ## 5. Where to look next
 
-**Read order for the next session:** this file → `docs/AUDIT-2026-08-29.md` **§13** (what the
-2026-08-31 verification found) and **§14** (the live task register, the ordered work list, the
-start-up commands, and what not to do) → `docs/SPEC.md` §17 → `docs/ARCHITECTURE.md` §11 → the
-relevant ADR → the code.
+**Read order for the next session:** this file → `docs/AUDIT-2026-08-29.md` **§15** (what the second
+2026-08-31 verification found, and §15.8 for what not to do), then **§14** (the live task register,
+the ordered work list, the start-up commands) and **§13** for the session before it → `docs/SPEC.md`
+§17 → `docs/ARCHITECTURE.md` §11 → the relevant ADR → the code.
 
 `docs/AUDIT-2026-08-29.md` is the authoritative register of what is broken. Its §14.2 gives the
 open tasks in the order they should be worked and says why that order. The first two, in short:
@@ -205,6 +255,8 @@ open tasks in the order they should be worked and says why that order. The first
 1. **T-00 / T-11 — CI.** Cannot be closed by a session; the branch has never been pushed. Until it
    is, every number in §0 above is one machine's word.
 2. **T-22 — load the real topic title.** Four lines, immediate quality effect.
+3. **A browser test for the dashboard.** Guard 8 proves the sources hold no fixture; nothing proves
+   the screen renders what the API returns. This is the gap that let **V-03** live for a whole phase.
 
 **Do not start T-34** (the honest real-provider run) before **T-29** and **T-30**. The Gemini free
 tier allows 20 requests a day and a correct run needs 6–9; that scarcity is the direct cause of the

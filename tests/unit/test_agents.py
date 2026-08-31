@@ -1,5 +1,6 @@
 """Unit tests for Phase 5 Agents (ResearchAgent, ExtractionAgent)."""
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -14,6 +15,7 @@ from atlas.application.ports.repositories import (
     KnowledgeRepositoryPort,
     SourceRepositoryPort,
 )
+from atlas.domain.execution.models import WindowType
 from atlas.domain.knowledge.models import (
     Claim,
     ClaimEvidenceLink,
@@ -138,7 +140,13 @@ class InMemoryKnowledgeRepository(KnowledgeRepositoryPort):
 
 
 class InMemoryExecutionRepository:
-    """In-memory execution repository for QuotaManager testing."""
+    """In-memory execution repository for QuotaManager testing.
+
+    It aggregates the ledger it is handed rather than returning an empty
+    summary, because `QuotaManager.check_rate_limits` now reads the ledger back:
+    a double that always reports zero consumption would make every rate-limit
+    test pass regardless of what the manager does.
+    """
 
     def __init__(self) -> None:
         self.calls: list[Any] = []
@@ -151,6 +159,26 @@ class InMemoryExecutionRepository:
     async def record_quota_consumption(self, entry: Any) -> Any:
         self.quota.append(entry)
         return entry
+
+    async def list_model_calls_for_run(self, run_id: str) -> list[Any]:
+        return [c for c in self.calls if c.run_id == run_id]
+
+    async def get_quota_consumption_summary(self) -> dict[str, dict[str, int]]:
+        now = utc_now()
+        minute_ago = now - timedelta(minutes=1)
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        summary: dict[str, dict[str, int]] = {}
+        for entry in self.quota:
+            bucket = summary.setdefault(
+                entry.provider, {"minute_requests": 0, "daily_requests": 0, "daily_tokens": 0}
+            )
+            if entry.window_type == WindowType.MINUTE and entry.window_start >= minute_ago:
+                bucket["minute_requests"] += entry.requests_consumed
+            elif entry.window_type == WindowType.DAY and entry.window_start >= day_start:
+                bucket["daily_requests"] += entry.requests_consumed
+                bucket["daily_tokens"] += entry.tokens_consumed
+        return summary
 
 
 @pytest.mark.asyncio

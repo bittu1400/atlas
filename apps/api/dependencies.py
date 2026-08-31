@@ -21,6 +21,10 @@ from atlas.application.usecases.get_run_status import (
     ListGatesUseCase,
     ListRunsUseCase,
 )
+from atlas.application.usecases.inspect_run import (
+    GetRunKnowledgeUseCase,
+    GetRunTelemetryUseCase,
+)
 from atlas.application.usecases.reject_gate import RejectGateUseCase
 from atlas.platform.config import get_settings
 from fastapi import Depends, HTTPException, Security, status
@@ -145,3 +149,16 @@ def get_quota_status_use_case(
     execution_repo: ExecutionRepository = Depends(get_execution_repository),
 ) -> GetQuotaStatusUseCase:
     return GetQuotaStatusUseCase(execution_repo)
+
+
+def get_run_knowledge_use_case(
+    execution_repo: ExecutionRepository = Depends(get_execution_repository),
+    knowledge_repo: KnowledgeRepository = Depends(get_knowledge_repository),
+) -> GetRunKnowledgeUseCase:
+    return GetRunKnowledgeUseCase(execution_repo, knowledge_repo)
+
+
+def get_run_telemetry_use_case(
+    execution_repo: ExecutionRepository = Depends(get_execution_repository),
+) -> GetRunTelemetryUseCase:
+    return GetRunTelemetryUseCase(execution_repo)

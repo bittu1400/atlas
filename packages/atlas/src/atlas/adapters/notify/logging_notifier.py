@@ -24,5 +24,15 @@ class LoggingNotifier(Notifier):
         message: str,
         payload: dict[str, Any] | None = None,
     ) -> None:
-        """Write one structured log line per operator notification."""
-        logger.info("notify.emitted", event=event, message=message, **(payload or {}))
+        """Write one structured log line per operator notification.
+
+        The payload is nested under one key rather than splatted: structlog binds
+        the log event name itself as `event`, so a caller-supplied `event` or
+        `timestamp` key silently collides with it and raises (defect V-01).
+        """
+        logger.info(
+            "notify.emitted",
+            notification_event=event,
+            message=message,
+            payload=dict(payload or {}),
+        )

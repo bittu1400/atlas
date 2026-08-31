@@ -2,7 +2,7 @@
 
 import pytest
 from atlas.application.policies.gate_policy import GatePolicy
-from atlas.application.policies.license_policy import LicensePolicy
+from atlas.application.policies.license_policy import LicensePolicy, canonicalize_license
 from atlas.domain.execution.models import GateType, PipelineStage
 from atlas.domain.quality.models import (
     RUBRIC_WEIGHTS,
@@ -12,8 +12,7 @@ from atlas.domain.quality.models import (
 )
 from atlas.platform.cache import ResponseCache
 from atlas.platform.clock import utc_now
-from atlas.platform.errors import LicenseIncompatibleError, RateLimitExceededError
-from atlas.platform.quota import QuotaManager
+from atlas.platform.errors import LicenseIncompatibleError
 
 
 def test_quality_rubric_dimension_weights() -> None:
@@ -158,41 +157,61 @@ def test_response_cache_key_determinism() -> None:
     assert len(key1) == 64
 
 
-@pytest.mark.asyncio
-async def test_quota_manager_rate_limiting() -> None:
-    """Verify sliding-window rate limiting in QuotaManager."""
-    qm = QuotaManager(
-        execution_repo=None,  # type: ignore[arg-type]
-        provider_limits={"gemini": {"rpm": 2, "rpd": 10, "tpm": 1000, "tpd": 10000}},
-    )
-    provider = "gemini"
+# =============================================================================
+# Invariant 10, defect V-10: license identifiers arrive in three dialects.
+# =============================================================================
 
-    # Rapidly consume 2 calls (the limit)
-    qm.check_rate_limits(provider)
-    await qm.record_invocation(
-        provider=provider,
-        model_id="gemini-1.5-flash",
-        prompt_version="v1",
-        parameters={},
-        code_version="v1",
-        input_tokens=10,
-        output_tokens=10,
-        latency_ms=10,
-    )
-    qm.check_rate_limits(provider)
-    await qm.record_invocation(
-        provider=provider,
-        model_id="gemini-1.5-flash",
-        prompt_version="v1",
-        parameters={},
-        code_version="v1",
-        input_tokens=10,
-        output_tokens=10,
-        latency_ms=10,
-    )
 
-    # 3rd call must raise RateLimitExceededError
-    with pytest.raises(RateLimitExceededError) as exc_info:
-        qm.check_rate_limits(provider)
-    assert exc_info.value.provider == provider
-    assert exc_info.value.limit_type == "RPM"
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("CC BY-SA 4.0", "cc-by-sa-4.0"),
+        ("cc-by-sa-4.0", "cc-by-sa-4.0"),
+        ("https://creativecommons.org/licenses/by-sa/4.0/", "cc-by-sa-4.0"),
+        ("http://creativecommons.org/licenses/by-nc-nd/3.0/", "cc-by-nc-nd-3.0"),
+        ("https://creativecommons.org/publicdomain/zero/1.0/", "cc0"),
+        ("https://creativecommons.org/publicdomain/mark/1.0/", "pd-mark"),
+        ("Public domain", "public-domain"),
+    ],
+)
+def test_license_identifiers_canonicalize_across_adapter_dialects(raw: str, expected: str) -> None:
+    """Wikimedia reports short names, the Internet Archive reports URLs."""
+    assert canonicalize_license(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "license_id",
+    [
+        "CC BY-SA 4.0",
+        "https://creativecommons.org/licenses/by-sa/4.0/",
+        "https://creativecommons.org/publicdomain/zero/1.0/",
+        "Public domain",
+        "cc0",
+    ],
+)
+def test_permitted_licenses_pass_in_every_dialect(license_id: str) -> None:
+    """A validly licensed asset was being discarded because of its spelling."""
+    assert LicensePolicy.validate_asset_license("ast_probe", license_id) is True
+
+
+@pytest.mark.parametrize(
+    "license_id",
+    [
+        "CC BY-NC 4.0",
+        "http://creativecommons.org/licenses/by-nc-nd/3.0/",
+        "cc-by-nd-4.0",
+        "Noncommercial use only",
+        "Unknown",
+        "",
+    ],
+)
+def test_restricted_and_unresolvable_licenses_are_still_rejected(license_id: str) -> None:
+    """Invariant 10 must not be weakened by the canonicalization: silence is not permission."""
+    with pytest.raises(LicenseIncompatibleError):
+        LicensePolicy.validate_asset_license("ast_probe", license_id)
+
+
+def test_the_word_licence_is_not_read_as_noncommercial() -> None:
+    """The blocked-term test used to be a substring match, and "licence" contains "nc"."""
+    assert canonicalize_license("CC BY 4.0 licence").split("-")[:3] == ["cc", "by", "4.0"]
+    assert LicensePolicy.validate_asset_license("ast_probe", "CC-BY-4.0") is True

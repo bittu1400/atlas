@@ -17,8 +17,12 @@ export const OriginsComposition: React.FC<OriginsVideoProps> = ({
   musicTrackUrl,
   showAttributionCard = true,
 }) => {
-  if (getRemotionEnvironment().isRendering && title === "The Decipherment of the Rosetta Stone") {
-    throw new Error('Invariant violation: Sample data reached a render output path.');
+  // The layout fixture must never reach a render output. This used to compare
+  // against one exact title string, so renaming the fixture disarmed it; it now
+  // keys on the PLACEHOLDER_ marker every synthetic field in `sampleData.ts`
+  // carries (rule R4).
+  if (getRemotionEnvironment().isRendering && title.includes('PLACEHOLDER_')) {
+    throw new Error('Invariant violation: layout fixture reached a render output path.');
   }
   const attributionCardDuration = 150; // 5 seconds at 30 fps
   const beatsDuration = showAttributionCard

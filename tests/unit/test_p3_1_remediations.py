@@ -2,7 +2,6 @@
 
 import threading
 from datetime import time
-from unittest.mock import MagicMock
 
 import pytest
 from atlas.application.policies.gate_policy import DEFAULT_STAGE_GATES
@@ -16,7 +15,6 @@ from atlas.platform.errors import (
     AiImageUnapprovedError,
     BlackoutWindowViolationError,
 )
-from atlas.platform.quota import DEFAULT_PROVIDER_LIMITS, QuotaManager
 
 from apps.api.dependencies import verify_api_key
 
@@ -65,24 +63,6 @@ def test_clear_settings_cache() -> None:
     clear_settings_cache()
     s3 = get_settings()
     assert s3 is not None
-
-
-def test_quota_manager_thread_safety() -> None:
-    """P1-05: QuotaManager counters and sliding window lock concurrency."""
-    mock_repo = MagicMock()
-    qm = QuotaManager(execution_repo=mock_repo)
-    assert DEFAULT_PROVIDER_LIMITS["gemini"]["rpm"] > 0
-
-    # Rapid concurrent checks should not race or corrupt state
-    def check_worker() -> None:
-        for _ in range(50):
-            qm.check_rate_limits("fake")
-
-    threads = [threading.Thread(target=check_worker) for _ in range(4)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
 
 
 def test_ai_image_approval_invariant_9() -> None:

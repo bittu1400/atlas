@@ -163,12 +163,20 @@ class OllamaEmbedder(Embedder):
         timeout_seconds: float = 30.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
-        self.model_id = model_id
+        self._model_id = model_id
         self.timeout_seconds = timeout_seconds
 
     @property
     def dimension(self) -> int:
         return 768
+
+    @property
+    def provider(self) -> str:
+        return "ollama"
+
+    @property
+    def model_id(self) -> str:
+        return self._model_id
 
     async def embed(self, text: str) -> list[float]:
         url = f"{self.base_url}/api/embeddings"

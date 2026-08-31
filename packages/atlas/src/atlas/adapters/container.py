@@ -6,7 +6,6 @@ tests, and a production container that resolves a provider port to a fake makes
 every "the pipeline ran" claim meaningless.
 """
 
-import os
 from functools import cached_property
 
 from atlas.adapters.audio.freesound import FreesoundLibrary
@@ -57,9 +56,12 @@ class MissingProviderCredentialError(AtlasError):
         self.variable_name = variable_name
 
 
-def _require_env(variable_name: str) -> str:
-    """Read a required environment variable or fail loudly."""
-    value = os.getenv(variable_name)
+def _require_credential(value: str | None, variable_name: str) -> str:
+    """Return a configured credential or name the variable that is missing.
+
+    The value comes from `Settings`, which reads `.env` as well as the process
+    environment; a raw `os.getenv` never saw `.env` at all (defect V-06).
+    """
     if not value:
         raise MissingProviderCredentialError(variable_name)
     return value
@@ -70,10 +72,11 @@ class Container:
 
     def __init__(self, session: AsyncSession | None = None) -> None:
         self.session = session
-        settings = get_settings()
+        self.settings = get_settings()
+        settings = self.settings
         self.storage = LocalStorage(root_dir=settings.storage_root)
 
-        self.embedder = OllamaEmbedder(base_url="http://localhost:11434")
+        self.embedder = OllamaEmbedder(base_url=settings.ollama_base_url)
         self.image_search = CompositeImageSearch(
             [WikimediaCommonsSearch(), InternetArchiveSearch()]
         )
@@ -110,12 +113,16 @@ class Container:
     @cached_property
     def llm(self) -> GeminiLlm:
         """Tier 2 hosted LLM. Built on first use so credential-free commands still run."""
-        return GeminiLlm(api_key=_require_env("GEMINI_API_KEY"))
+        return GeminiLlm(
+            api_key=_require_credential(self.settings.gemini_api_key, "GEMINI_API_KEY")
+        )
 
     @cached_property
     def sound_lib(self) -> FreesoundLibrary:
         """CC0 sound library. Built on first use so credential-free commands still run."""
-        return FreesoundLibrary(api_key=_require_env("FREESOUND_API_KEY"))
+        return FreesoundLibrary(
+            api_key=_require_credential(self.settings.freesound_api_key, "FREESOUND_API_KEY")
+        )
 
     def require_execution_repo(self) -> ExecutionRepository:
         """Return the execution repository, or fail if this container has no session."""

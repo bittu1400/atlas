@@ -35,8 +35,12 @@ class InternetArchiveSearch(ImageSearch):
 
     async def search_archival(self, query: str, limit: int = 10) -> list[ImageCandidate]:
         """Search Internet Archive for images matching the query."""
+        # Only ask for items that declare a license. Without this the search
+        # returned mostly `licenseurl`-less items, which Invariant 10 rejects,
+        # so the adapter spent up to 31 seconds of polite metadata fetches per
+        # call to return an empty list every time (defect V-10).
         search_params = {
-            "q": f"{query} AND mediatype:image",
+            "q": f"{query} AND mediatype:image AND licenseurl:[* TO *]",
             "fl[]": ["identifier"],
             "output": "json",
             "rows": limit * 3,

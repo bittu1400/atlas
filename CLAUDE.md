@@ -5,7 +5,7 @@ This file tells you **how to work in this repository**. It is not the product vi
 | Document | What it is | Authority |
 |---|---|---|
 | `docs/STATUS.md` | **Read first.** Current phase, measured baseline, what exists vs what does not, and the session close-out checklist | Authoritative for state |
-| `docs/AUDIT-2026-08-29.md` | **Read second** — §13 (what the 2026-08-31 verification found), then §14 (live task register, ordered work list, start-up commands, what not to do). The Phase 7 fabrication incident and the full defect register are in §1–§12 | Authoritative for what is actually broken |
+| `docs/AUDIT-2026-08-29.md` | **Read second** — §15 (what the second 2026-08-31 verification found, defects V-01–V-11; §15.8 is what not to do), then §14 (live task register, ordered work list, start-up commands) and §13 for the session before it. The Phase 7 fabrication incident and the full defect register are in §1–§12 | Authoritative for what is actually broken |
 | `docs/archive/` | Superseded documents kept as evidence under rule R11. **Nothing in here is a current claim** | Historical record only |
 | `prompt.md` | The founder's original vision statement | Immutable. Never edit. Cite it, don't rewrite it. |
 | `docs/SPEC.md` | Product truth — what Atlas does and what "correct" means | Authoritative for behaviour |
@@ -15,15 +15,15 @@ This file tells you **how to work in this repository**. It is not the product vi
 | `docs/DECISIONS.md` | Log of settled choices (D1–D106) | Record; supersede via ADR only |
 | `CLAUDE.md` | How to work here | This file |
 
-**Read order before any non-trivial change:** `docs/STATUS.md` → `docs/AUDIT-2026-08-29.md` §13 and
-§14 → `docs/SPEC.md` §17 → `docs/ARCHITECTURE.md` §11 → the relevant ADR → the code.
+**Read order before any non-trivial change:** `docs/STATUS.md` → `docs/AUDIT-2026-08-29.md` §15, §14
+and §13 → `docs/SPEC.md` §17 → `docs/ARCHITECTURE.md` §11 → the relevant ADR → the code.
 
 `docs/STATUS.md` comes first because every other document describes what Atlas *will* be. Only STATUS
 tells you what exists right now, and it is the one file to update at the end of a working session —
 its §5 carries the close-out checklist.
 
 **As of 2026-08-31, STATUS is rewritten from measurement and the three registers agree with the
-code:** `STATUS.md` (what exists), `SPEC.md` §17 (behaviour divergences), `ARCHITECTURE.md` §11
+code — twice that day, the second time after the V-01–V-11 remediation:** `STATUS.md` (what exists), `SPEC.md` §17 (behaviour divergences), `ARCHITECTURE.md` §11
 (structure divergences). Where any two disagree, the audit wins and the disagreement is itself a
 finding — write it down before doing anything else.
 
@@ -247,3 +247,10 @@ gates are the audit trail. Back up first, record what was removed and why.
 **R12 — Secrets never enter a URL, a log, an error message, or a database column.** Credentials go
 in headers. Every provider adapter's error path runs through a redaction helper and has a test
 asserting its errors do not contain the key.
+
+**R13 — The operator screen is an output of the system, not a mock-up of it.** Every number, claim,
+hash and log line a human sees comes from a row. No component holds a fixture, no API client answers
+a failure with invented data, and a failed gate action is reported as a failure. Rules R3 and R4
+apply to TypeScript exactly as they apply to Python — front-end code is where an invented fact meets
+the only human who could have caught it. Added after defect V-03 (audit §15.4); enforced by Guard 8
+in `tests/unit/test_no_fabrication.py`.

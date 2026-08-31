@@ -25,6 +25,7 @@ from atlas.platform.clock import utc_now
 from atlas.platform.ids import (
     generate_claim_id,
     generate_evidence_id,
+    knowledge_object_id_for_topic,
 )
 from atlas.platform.logging import get_logger
 from atlas.platform.quota import QuotaManager
@@ -97,7 +98,7 @@ class ExtractionAgent:
 
         # 3. Route call and verify rate limits
         route = RoutingPolicy.get_route(TaskKind.CLAIM_EXTRACTION)
-        self.quota_mgr.check_rate_limits(route.provider)
+        await self.quota_mgr.check_rate_limits(route.provider)
 
         request = LlmRequest(
             prompt=prompt_text,
@@ -191,7 +192,7 @@ class ExtractionAgent:
                 linked_claim_ids.add(claim_id)
 
         # 9. Create or update Knowledge Object Version
-        ko_id = f"ko_{topic_id}"
+        ko_id = knowledge_object_id_for_topic(topic_id)
 
         all_claim_ids = []
         for c in claim_domain_objs:

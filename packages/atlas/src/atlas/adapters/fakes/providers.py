@@ -255,6 +255,14 @@ class FakeEmbedder(Embedder):
     def dimension(self) -> int:
         return 128
 
+    @property
+    def provider(self) -> str:
+        return "fake"
+
+    @property
+    def model_id(self) -> str:
+        return "fake-embedder"
+
     async def embed(self, text: str) -> list[float]:
         h = hashlib.sha256(text.encode("utf-8")).digest()
         # Convert first 128 bytes (cycling) to normalized floats

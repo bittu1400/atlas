@@ -421,6 +421,21 @@ except where noted.
 | "Nothing is hardcoded" | **Partially false.** Model IDs (`gemini-2.0-flash`, six sites) and the Ollama base URL are hardcoded — **T-29**, defects C-08, R-05. The story angle is no longer hardcoded (D92). |
 | "runtime overrides in the database for anything the dashboard can toggle" | **Still not implemented.** The unused `policy_override` argument was removed from `GatePolicy.should_suspend` on 2026-08-31 (T-37), so the doc no longer has a phantom implementation to point at. Open. |
 
+### 11.7b Structure changed by the second verification on 2026-08-31
+
+Recorded here because §11 is the register of where the document and the tree disagreed. Full
+findings in `docs/AUDIT-2026-08-29.md` §15.
+
+| Item | Which side changed | Note |
+|---|---|---|
+| `Dockerfile` | **Tree.** `docker-compose.yml` had named it since it was written and it did not exist, so `docker compose up` failed on the first build. It installs ffmpeg, the one system dependency `StubRenderer` has. | V-05, D116 |
+| `application/usecases/inspect_run.py` | **Tree.** Two read-only use cases and their view models, behind `GET /runs/{id}/knowledge` and `GET /runs/{id}/telemetry`. | V-03, D111 |
+| `apps/web/src/api/{client,types}.ts` | **Tree.** Rewritten against the real API. The previous types described endpoints and fields that have never existed, and the client answered failures with fabricated data. | V-03 |
+| `apps/renderer/src/**/*.js` | **Tree.** Eleven committed `tsc` outputs removed; the package's tsconfig sets `noEmit` and its `main` points at source. | V-09 |
+| `ports/embedder.py` | **Tree.** The port gained `provider` and `model_id`, so a metered embedding names the adapter that ran (Invariant 7). | V-02, D110 |
+| `platform/quota.py` | **Tree.** In-memory counters and their lock deleted; both windows are computed from `quota_ledger`, which is what ADR-0004 always said. | V-04, D115 |
+| `apps/worker/main.py` | **Tree.** The poll loop that polled nothing is deleted. | V-08, D118 |
+
 ### 11.8 Open structural items carried forward
 
 Everything above that is still open, in one list, so the next session does not have to re-derive it:
@@ -434,5 +449,8 @@ Everything above that is still open, in one list, so the next session does not h
 | Providers selected by import, not configuration | **T-29** | Needs the settings surface T-29 introduces. |
 | `trace_id` never bound into the logging context | — | One `structlog.contextvars.bind_contextvars` call at run start; nobody has made it. |
 | No cassettes, no golden set | **T-36** | Blocks ADR-0012's quality measurement. |
-| Model IDs and Ollama base URL hardcoded | **T-29** | ADR-0012 records the decision; the implementation is unstarted. |
+| Model IDs hardcoded | **T-29** | ADR-0012 records the decision; the implementation is unstarted. The Ollama base URL left this row on 2026-08-31 — it is `Settings.ollama_base_url` (**D116**). |
 | No YAML configuration surface | **T-29** | Same. |
+| No browser test for `apps/web` | new, 2026-08-31 | Guard 8 parses the dashboard's sources for fixtures; nothing renders it and asserts what appears. This is the gap that let defect **V-03** stand for a whole phase. |
+| No cassette for any network adapter | **T-36** | Seven wired adapters reach the network and none has a test, because a unit test may not and there is nothing to replay. `tests/integration/test_production_adapters.py` covers the six that do not. |
+| Gate review data has no endpoint | **D111** | The approval screen can show Gate rows and link to the Run's Knowledge Object and telemetry. Asset candidates, script beats and the quality report have no read model, so those panels were deleted rather than kept as fixtures. |

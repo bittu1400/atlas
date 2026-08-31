@@ -520,6 +520,12 @@ detectable. T-25 remains the fix.
   T-26's "a snapshot whose bytes came off the network" is **not** demonstrated — that is **T-34**.
 - Tier assignments in §11 are amended by **ADR-0012** (Tier 1 becomes primary; Tier 2 reserved for
   fact verification) after measurement showed the Gemini free tier allows 20 requests/day.
+- §11 / ADR-0004: "Every call is metered before it is issued", over "persisted token buckets shared
+  across workers". **Both halves were false until 2026-08-31 (defects V-02, V-04). Code changed:**
+  stage 1's topic-discovery call and stage 13's two embedding calls had no `QuotaManager` at all,
+  and `check_rate_limits` counted in process memory while never reading the `quota_ledger` rows it
+  wrote — so every CLI invocation and every worker process began with a full daily budget. Both
+  agents now meter, and the windows are computed from the ledger (**D109**, **D110**, **D115**).
 
 ### 17.5 Quality (§8)
 
@@ -588,3 +594,16 @@ New rows, opened by the verification session (audit §13). None is a correction 
 | §6 | The gate-stage branch of `PipelineRunner._dispatch_stage_handler` — the one returning `gate_passed_<stage>` for the six manual/hybrid stages — is **unreachable**. Those stages always suspend, and `_execute_stage` returns before dispatch in every path that follows. Harmless as a defensive fallback, but it is dead code that reads like behaviour. | **new, T-53** |
 | §7 | `PUBLISH` returns success while `StubPublisher` is wired. A Run can reach `completed` having published nothing. Stated in `docs/STATUS.md` §3, but it is the exact shape of "it ran is not it worked" (**R6**). | **T-21** |
 | §11 | `ImageCandidate` list at stage 13 is re-searched rather than loaded from stage 11, so the candidate set the operator approved at the stage 12 gate is not provably the set the Storyboard drew from. The Storyboard itself is persisted, so everything from stage 13 onward is stable. | **new, T-54** (ADR-0016 trade-offs) |
+
+### 17.9 Divergences found by the second verification on 2026-08-31
+
+Opened and, except where noted, closed by the session recorded in audit §15. Listed because §17 is
+the register of where the spec and the code disagreed, not only of where they still do.
+
+| Spec section | Divergence | State |
+|---|---|---|
+| §10.1 / Invariant 10 | The license gate compared one dialect against its allowlist while the two image adapters emit the other two, so every validly licensed CC asset was rejected and only "Public domain" survived — enforcement that over-blocks silently is as untrustworthy as enforcement that under-blocks. The blocked-term test was a substring match, so the "nc" inside "licence" read as non-commercial. | **Closed** (D112, V-10) |
+| §11 / Invariant 8 | Two model call sites were unmetered and the quota ledger was never read back. | **Closed** (D109, D110, D115, V-02, V-04) |
+| §7 | The operator screen reported a **failed** gate approval as a recorded decision, and displayed invented claims, snapshot hashes, telemetry and quota figures. §7's human gate is only as real as what the human is shown. | **Closed** (D111–D114, V-03) |
+| §12 | The dashboard's wire types described an API that does not exist — `current_stage`, `gate.stage`, `gate.metadata`, a `'open'` gate status, a `/gates` route, a `POST /runs` body with no `topic_id` — so it had never once rendered live data. | **Closed** (D111, V-03) |
+| §8.4 | Still open: no golden set, and now also **no browser test**. Guard 8 asserts the dashboard's *sources* carry no fixture; nothing asserts what the screen renders. | **Open**, `docs/STATUS.md` §3 |

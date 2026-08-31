@@ -60,6 +60,7 @@ from atlas.platform.errors import (
 )
 from atlas.platform.ids import (
     generate_gate_id,
+    knowledge_object_id_for_topic,
 )
 from atlas.platform.logging import get_logger
 from atlas.platform.quota import QuotaManager
@@ -163,8 +164,8 @@ class PipelineRunner:
             llm=self.llm,
             quota_mgr=self.quota_mgr,
         )
-        self.topic_agent = TopicDiscoveryAgent(llm=self.llm)
-        self.storyboard_agent = StoryboardAgent(embedder=self.embedder)
+        self.topic_agent = TopicDiscoveryAgent(llm=self.llm, quota_mgr=self.quota_mgr)
+        self.storyboard_agent = StoryboardAgent(embedder=self.embedder, quota_mgr=self.quota_mgr)
         self.sound_design_agent = SoundDesignAgent(sound_library=self.sound_lib)
 
     async def run_pipeline(self, run_id: str) -> Run:
@@ -446,7 +447,9 @@ class PipelineRunner:
         logger.info("stage.executing", stage=stage.value, run_id=run.id)
 
         if stage == PipelineStage.IDEA_DISCOVERY:
-            ideas = await self.topic_agent.execute(run.captured_focus)
+            ideas = await self.topic_agent.execute(
+                run.captured_focus, run_id=run.id, step_id=step.id
+            )
             return f"ideas_count_{len(ideas)}"
 
         elif stage == PipelineStage.RESEARCH:
@@ -506,7 +509,7 @@ class PipelineRunner:
             return "all_claims_verified"
 
         elif stage == PipelineStage.SCRIPT_GENERATION:
-            ko_id = f"ko_{run.topic_id}"
+            ko_id = knowledge_object_id_for_topic(run.topic_id)
             story_angle = await self.script_agent.select_story_angle(
                 ko_id=ko_id,
                 topic_title=run.topic_id,
@@ -555,7 +558,9 @@ class PipelineRunner:
                         c.id, is_human_approved=is_human_approved
                     )
 
-            storyboard = await self.storyboard_agent.generate(script, timing_plan, candidates)
+            storyboard = await self.storyboard_agent.generate(
+                script, timing_plan, candidates, run_id=run.id, step_id=step.id
+            )
             await self.production_repo.save_storyboard(storyboard, run.id)
             return storyboard.id
 
