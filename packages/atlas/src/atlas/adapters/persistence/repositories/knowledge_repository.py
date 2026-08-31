@@ -3,6 +3,7 @@
 from atlas.adapters.persistence.tables import (
     ClaimEvidenceTable,
     ClaimTable,
+    ClaimVersionTable,
     EvidenceTable,
     KnowledgeObjectClaimTable,
     KnowledgeObjectCurrentTable,
@@ -11,6 +12,9 @@ from atlas.adapters.persistence.tables import (
     SourceTable,
 )
 from atlas.domain.common.enums import SourceTier
+from atlas.domain.knowledge.invariants import (
+    validate_knowledge_object_claims_are_traceable,
+)
 from atlas.domain.knowledge.models import (
     AssertionType,
     Claim,
@@ -41,8 +45,27 @@ class KnowledgeRepository:
     async def save_version(
         self, version: KnowledgeObjectVersion, make_current: bool = True
     ) -> KnowledgeObjectVersion:
-        """Persist a new immutable Knowledge Object version and optionally advance the current pointer."""
-        # 1. Insert version row
+        """Persist a new immutable Knowledge Object version and optionally advance the current pointer.
+
+        Raises:
+            TraceabilityConstraintError: if any referenced claim has no `claim_evidence` row.
+                Invariant 1 refuses the save rather than dropping the claim (defect SC-04).
+        """
+        # 1. Refuse the whole version if any claim lacks evidence, before anything is written
+        claim_ids_with_evidence: set[str] = set()
+        if version.claim_ids:
+            ev_stmt = select(ClaimEvidenceTable.claim_id).where(
+                ClaimEvidenceTable.claim_id.in_(version.claim_ids)
+            )
+            claim_ids_with_evidence = set((await self.session.execute(ev_stmt)).scalars().all())
+        validate_knowledge_object_claims_are_traceable(
+            ko_id=version.ko_id,
+            version=version.version,
+            claim_ids=version.claim_ids,
+            claim_ids_with_evidence=claim_ids_with_evidence,
+        )
+
+        # 2. Insert version row
         version_row = KnowledgeObjectVersionTable(
             ko_id=version.ko_id,
             version=version.version,
@@ -58,19 +81,20 @@ class KnowledgeRepository:
         )
         self.session.add(version_row)
 
-        # 2. Insert claim links
+        # 3. Link every claim: the traceability check above already refused the untraceable ones
         for claim_id in version.claim_ids:
-            claim_link = KnowledgeObjectClaimTable(
-                ko_id=version.ko_id,
-                version=version.version,
-                claim_id=claim_id,
+            self.session.add(
+                KnowledgeObjectClaimTable(
+                    ko_id=version.ko_id,
+                    version=version.version,
+                    claim_id=claim_id,
+                )
             )
-            self.session.add(claim_link)
 
         # Flush version row to satisfy FK for current pointer
         await self.session.flush()
 
-        # 3. Advance current pointer if requested
+        # 4. Advance current pointer if requested
         if make_current:
             existing_ptr = await self.session.get(
                 KnowledgeObjectCurrentTable, version.ko_id, with_for_update=True
@@ -175,19 +199,30 @@ class KnowledgeRepository:
 
     async def get_traceability_chain(self, claim_id: str) -> TraceabilityChain:
         """Resolve the full Claim -> Evidence -> Source -> Snapshot provenance tree."""
-        # 1. Fetch Claim
+        # 1. Fetch Claim identity and its current (highest) version
         claim_stmt = select(ClaimTable).where(ClaimTable.id == claim_id)
         claim_row = (await self.session.execute(claim_stmt)).scalar_one_or_none()
         if not claim_row:
             raise KnowledgeObjectNotFoundError(f"Claim {claim_id}")
 
+        version_stmt = (
+            select(ClaimVersionTable)
+            .where(ClaimVersionTable.claim_id == claim_id)
+            .order_by(ClaimVersionTable.version.desc())
+            .limit(1)
+        )
+        version_row = (await self.session.execute(version_stmt)).scalars().first()
+        if not version_row:
+            raise KnowledgeObjectNotFoundError(f"Claim {claim_id} has no version rows")
+
         claim = Claim(
             id=claim_row.id,
-            text=claim_row.text,
-            assertion_type=AssertionType(claim_row.assertion_type),
-            confidence=claim_row.confidence,
-            status=ClaimStatus(claim_row.status),
-            inferred_from_claim_ids=list(claim_row.inferred_from_claim_ids or []),
+            version=version_row.version,
+            text=version_row.text,
+            assertion_type=AssertionType(version_row.assertion_type),
+            confidence=version_row.confidence,
+            status=ClaimStatus(version_row.status),
+            inferred_from_claim_ids=list(version_row.inferred_from_claim_ids or []),
             created_at=claim_row.created_at,
         )
 

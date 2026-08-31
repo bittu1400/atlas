@@ -82,8 +82,8 @@ class ScriptAgent:
         extracted = await self.llm.extract(request, StoryAnglePayload)
 
         await self.quota_mgr.record_invocation(
-            provider=route.provider,
-            model_id=route.model_id,
+            provider=extracted.provider,
+            model_id=extracted.model_id,
             prompt_version="story_angle_v1",
             parameters={"temperature": route.temperature},
             code_version="phase-5-v1",
@@ -148,8 +148,8 @@ class ScriptAgent:
         extracted = await self.llm.extract(request, ScriptPayload)
 
         await self.quota_mgr.record_invocation(
-            provider=route.provider,
-            model_id=route.model_id,
+            provider=extracted.provider,
+            model_id=extracted.model_id,
             prompt_version="script_generation_v1",
             parameters={"temperature": route.temperature},
             code_version="phase-5-v1",

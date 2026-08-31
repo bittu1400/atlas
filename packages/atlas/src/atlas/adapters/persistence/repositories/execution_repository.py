@@ -21,6 +21,7 @@ from atlas.domain.execution.models import (
     IdempotencyKey,
     ModelCall,
     QuotaLedgerEntry,
+    RejectionFeedback,
     ResourceLock,
     Run,
     RunStatus,
@@ -400,6 +401,31 @@ class ExecutionRepository:
         self.session.add(approval_row)
         await self.session.flush()
         return approval
+
+    async def list_approvals_for_run(self, run_id: str) -> list[Approval]:
+        """List every recorded human decision for a Run, oldest first.
+
+        Invariant 9 asks whether a person approved, not whether a gate row says
+        `approved`; only an Approval row carries the actor who decided.
+        """
+        stmt = (
+            select(ApprovalTable)
+            .where(ApprovalTable.run_id == run_id)
+            .order_by(ApprovalTable.created_at.asc())
+        )
+        rows = (await self.session.execute(stmt)).scalars().all()
+        return [
+            Approval(
+                id=r.id,
+                gate_id=r.gate_id,
+                run_id=r.run_id,
+                actor_id=r.actor_id,
+                decision=ApprovalDecision(r.decision),
+                feedback=RejectionFeedback.model_validate(r.feedback) if r.feedback else None,
+                created_at=r.created_at,
+            )
+            for r in rows
+        ]
 
     # =========================================================================
     # Resource Locks (GPU Semaphore Lease)

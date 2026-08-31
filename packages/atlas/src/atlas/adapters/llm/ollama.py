@@ -143,6 +143,8 @@ class OllamaLlm(Llm, StructuredLlm):
                 output_tokens=eval_count,
                 latency_ms=latency_ms,
                 raw_response=raw_text,
+                model_id=self.model_id,
+                provider="ollama",
             )
 
         except Exception as exc:
@@ -176,7 +178,8 @@ class OllamaEmbedder(Embedder):
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 resp = await client.post(url, json=payload)
                 resp.raise_for_status()
-                return resp.json()["embedding"]
+                embedding: list[float] = resp.json()["embedding"]
+                return embedding
         except Exception as exc:
             raise OllamaProviderError(f"Embedding failed: {exc}") from exc
 
@@ -190,7 +193,8 @@ class OllamaEmbedder(Embedder):
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 resp = await client.post(url, json=payload)
                 if resp.status_code == 200:
-                    return resp.json()["embeddings"]
+                    embeddings: list[list[float]] = resp.json()["embeddings"]
+                    return embeddings
 
                 # Fallback to sequential
                 import asyncio

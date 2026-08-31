@@ -157,6 +157,8 @@ class GeminiLlm(Llm, StructuredLlm):
                 output_tokens=output_tokens,
                 latency_ms=latency_ms,
                 raw_response=raw_text,
+                model_id=self.model_id,
+                provider="gemini",
             )
 
         except Exception as exc:

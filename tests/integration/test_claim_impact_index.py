@@ -36,7 +36,7 @@ async def test_claim_impact_index_records_and_retrieves_usages(
         status=ClaimStatus.VERIFIED,
         created_at=now,
     )
-    await repo.save_claim(claim)
+    await repo.save_claim(claim, actor_id="test.seed", reason="Fixture seed")
 
     # 2. Record usages in two different renders
     usage1 = ClaimUsage(

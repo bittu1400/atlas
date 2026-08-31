@@ -66,16 +66,17 @@ atlas/
 │   │   │   ├── agents/           # research, extraction, verification, script, judge
 │   │   │   └── policies/         # routing, license, gate, quota, novelty
 │   │   ├── adapters/
-│   │   │   ├── llm/              # gemini/ · ollama/ — the only vendor SDK imports
-│   │   │   ├── embedding/  search/  sources/  images/  sound/
-│   │   │   ├── renderer/         # remotion/ · ffmpeg/
+│   │   │   ├── llm/              # gemini.py · ollama.py — the only vendor SDK imports
+│   │   │   ├── search/  sources/  images/  audio/
+│   │   │   ├── renderer/         # stub.py — the real renderer does not exist yet (D57)
+│   │   │   ├── publish/  queue/
 │   │   │   ├── persistence/      # SQLAlchemy models, repositories, Alembic
 │   │   │   ├── storage/          # local filesystem, S3-compatible
-│   │   │   └── notify/
+│   │   │   ├── notify/           # logging_notifier.py
+│   │   │   └── fakes/            # deterministic provider doubles used by every test (R2)
 │   │   ├── platform/             # config, logging, clock, ids, errors, cache, quota ledger
 │   │   └── prompts/              # versioned prompt templates — never inline strings
-│   ├── tokens/                   # design tokens shared by dashboard AND video
-│   └── fakes/                    # deterministic provider doubles used by every test
+│   └── tokens/                   # design tokens shared by dashboard AND video
 ├── tests/                        # unit · integration · e2e · golden
 ├── deploy/                       # compose files, Caddyfile, VPS path (unprovisioned)
 └── var/                          # local blobs, snapshots, renders — gitignored
@@ -194,7 +195,7 @@ class SourceFetcher(Protocol):
     async def fetch(self, url: Url) -> Snapshot: ...    # polite, cached, hashed, timestamped
 ```
 
-Every port has a deterministic fake in `packages/fakes/`. Every port is selected by configuration, never
+Every port has a deterministic fake in `packages/atlas/src/atlas/adapters/fakes/`. Every port is selected by configuration, never
 by import. Capability negotiation is explicit because free-tier models differ in context window and
 structured-output support, and the routing policy needs to know before dispatching.
 
@@ -258,7 +259,7 @@ Configuration, Documentation.
 |---|---|
 | Unit | No network, no database, no filesystem, no GPU. Pure domain logic and policies. |
 | Integration | Real Postgres in a container. Real repositories. Fake providers. |
-| End-to-end | Whole pipeline against `packages/fakes/`. Must finish in under a minute, cost nothing, and run on every commit. |
+| End-to-end | Whole pipeline against `adapters/fakes/`. Must finish in under a minute, cost nothing, and run on every commit. |
 | Cassettes | Real provider responses recorded once, replayed thereafter. Recording is manual and explicit. |
 | Golden | The hand-scored quality set. Re-run on every prompt change to catch quality regressions. |
 
@@ -293,19 +294,36 @@ description above without anyone checking the description against the tree.
 touches structure. A row is deleted only when the code matches the doc — never when the doc is
 quietly edited to match the code.
 
-Verified against HEAD `9938244` on 2026-08-29.
+Verified against HEAD `9938244` on 2026-08-29. **Re-verified 2026-08-29 (Stage C review) against
+HEAD `c776b59` plus the uncommitted Stage C working tree**; §11.5 updated (D72), every other row
+still holds. `PipelineStage` has moved to `domain/execution/models.py` (defect G-06 closed, T-42),
+which §11.1 never covered — no row changes.
+
+**Re-verified again 2026-08-29 (Stage C remediation session, T-43 → T-45, T-51, T-52)** against
+HEAD `c776b59` plus the working tree. Two rows changed, both about `packages/fakes/` (§11.1, §11.6):
+the directory has been **deleted** (defect SC-13, task T-52), so the divergence is no longer "the
+documented package is empty" but "the documented package does not exist, and §2/§5/§9 still name
+it". §11.5's `model_calls` row is unchanged and still describes false provenance — that is T-12,
+which this session did not reach. Every other row holds.
+
+**Re-verified 2026-08-31 (this session)** against HEAD `c776b59` plus the working tree, after the
+B1-B9 remediation. Rows closed: `packages/fakes/` naming (T-40), `adapters/sound/`,
+`adapters/notify/`, the missing `publish/`/`queue/`/`search/` entries, the fakes-in-the-container
+row in §11.2, the `model_calls` row in §11.5, the e2e path in §11.6, and the hardcoded story angle
+in §11.7. Rows added: `production_repository.py`. The renderer row stays open by decision (D57).
 
 ### 11.1 Folder layout (§2)
 
 | Documented | Actual | Note |
 |---|---|---|
-| `packages/fakes/` — "deterministic provider doubles used by every test" | Exists but contains **only `__init__.py`**. The real fakes are at `packages/atlas/src/atlas/adapters/fakes/providers.py` (~22 KB) | §5 and §9 both point readers at the empty directory. Either move the fakes there or delete the shell and fix three references. |
-| `adapters/embedding/` | Does not exist. `OllamaEmbedder` lives in `adapters/llm/ollama.py` | |
-| `adapters/sound/` | Actual directory is `adapters/audio/` | |
-| `adapters/notify/` | Does not exist. `FakeNotifier` is the only `Notifier`, in `adapters/fakes/` | The production container wires a fake notifier. |
-| `adapters/llm/gemini/`, `adapters/llm/ollama/` (packages) | Single modules: `gemini.py`, `ollama.py` | Cosmetic. |
-| `adapters/renderer/remotion/` + `adapters/renderer/ffmpeg/` | One module `adapters/renderer/remotion.py`; ffmpeg is invoked inline via `subprocess` | |
-| — | `adapters/publish/`, `adapters/queue/`, `adapters/search/` exist and are **absent from §2** | |
+| `packages/fakes/` — "deterministic provider doubles used by every test" | **Deleted 2026-08-29 (T-52).** | **Closed 2026-08-31 (T-40).** §2's tree, §5 and §9 now name `adapters/fakes/`. |
+| `adapters/embedding/` | Does not exist. `OllamaEmbedder` lives in `adapters/llm/ollama.py` | §2's tree no longer claims it. |
+| `adapters/sound/` | Actual directory is `adapters/audio/` | **Closed 2026-08-31 (T-40).** §2 names `audio/`. |
+| `adapters/notify/` | **Exists as of 2026-08-31.** Holds `LoggingNotifier`; the production container no longer wires a fake notifier. | Closed. |
+| `adapters/llm/gemini/`, `adapters/llm/ollama/` (packages) | Single modules: `gemini.py`, `ollama.py` | **Closed 2026-08-31 (T-40).** §2 names the modules. |
+| `adapters/renderer/remotion/` + `adapters/renderer/ffmpeg/` | One module `adapters/renderer/stub.py`; ffmpeg is invoked inline via `subprocess`. Renamed from `remotion.py` on 2026-08-31 (rule R3, defect C-03): it has never invoked Remotion. | **Still divergent from ADR-0005**, deliberately — the real renderer is deferred (D57). |
+| — | `adapters/publish/`, `adapters/queue/`, `adapters/search/` exist and were **absent from §2** | **Closed 2026-08-31 (T-40).** |
+| — | `adapters/persistence/repositories/production_repository.py` is new (ADR-0016) | Persists Scripts, Timing Plans, Storyboards and Render Artifacts. |
 | `deploy/` — "compose files, Caddyfile, VPS path" | Does not exist. `docker-compose.yml` and `Caddyfile` sit at the repository root | |
 | `domain/` subpackages: knowledge, focus, script, media, quality, execution | All present, **plus** undocumented `domain/assets/`, `domain/common/`, `domain/publishing/` | |
 | — | `application/pipeline/` (holds `runner.py`, the orchestrator) is **absent from §2** | The single most important module in the application layer is undocumented. |
@@ -315,7 +333,7 @@ Verified against HEAD `9938244` on 2026-08-29.
 | Claim | Reality |
 |---|---|
 | "Enforced in CI by an import-linter contract, not by good intentions." | **False.** `import-linter` is not a dependency and no contract file exists. Enforcement is `tests/unit/test_layering_boundaries.py`, a hand-rolled AST check covering **`domain/` only** — the `adapters → application → domain` direction is not checked at all. See ADR-0014 for the decision to extend the AST test rather than adopt import-linter. |
-| "Provider independence is enforced by import direction." | Holds for vendor SDKs. Does **not** hold for fakes: `adapters/container.py` — the production container — imports `FakeSearch`, `FakeSourceFetcher` and `FakeNotifier` from `adapters/fakes/` (defect C-01). |
+| "Provider independence is enforced by import direction." | **Holds as of 2026-08-31** (defects C-01, C-02 closed). `adapters/container.py` imports nothing from `adapters/fakes/`; it wires `WikipediaSearch`, `HttpSourceFetcher` and `LoggingNotifier`. Guard 2 (`test_guard_2_no_fakes_imported_in_production_modules`) enforces it and no longer xfails. |
 
 ### 11.3 Persistence (§6)
 
@@ -337,7 +355,7 @@ Verified against HEAD `9938244` on 2026-08-29.
 | Claim | Reality |
 |---|---|
 | "A `trace_id` generated per Run and propagated through `contextvars` reaches every log line" | Partial. `structlog.contextvars.merge_contextvars` is configured in `platform/logging.py`, and `runs.trace_id` exists, but no code binds the trace ID into the context. Log lines do not carry it. |
-| "`model_calls` — provider, model, prompt version, token counts, latency, cache hit, outcome" | The table has the columns. **The values are wrong**: every row records `provider='fake'`, `model_id='fake-…'` because `RoutingPolicy.get_route()` defaults `use_fakes=True` and no caller overrides it (defect D-01). |
+| "`model_calls` — provider, model, prompt version, token counts, latency, cache hit, outcome" | **Correct as of 2026-08-31** (defect SC-02 closed, T-12). Provenance is taken from the adapter that executed: an `Extracted`/`LlmResponse` carries its own `provider` and `model_id`, and the agents record those. A run against fakes writes `provider='fake'`; the end-to-end test asserts it. |
 
 ### 11.6 Testing (§9)
 
@@ -345,7 +363,7 @@ Verified against HEAD `9938244` on 2026-08-29.
 |---|---|
 | "Cassettes — real provider responses recorded once, replayed thereafter" | Does not exist. No cassette files, no recording mechanism, no library. |
 | "Golden — the hand-scored quality set" | Does not exist. This is a prerequisite for ADR-0012's quality measurement. |
-| "End-to-end … against `packages/fakes/`" | The e2e test (`tests/integration/test_pipeline_execution_e2e.py`) runs against `adapters/fakes/`; `packages/fakes/` is empty. |
+| "End-to-end … against `packages/fakes/`" | **Closed 2026-08-31 (T-40).** §9 now names `adapters/fakes/`. |
 | Unit: "No network, no database, no filesystem" | `tests/unit/test_layering_boundaries.py` reads the filesystem by design. Acceptable, but the rule as written forbids it. |
 
 ### 11.7 Deployment (§10)
@@ -353,5 +371,5 @@ Verified against HEAD `9938244` on 2026-08-29.
 | Claim | Reality |
 |---|---|
 | "Configuration — `.env` for secrets, YAML for structure (routing policy, style profiles, research profiles, gate defaults)" | **No YAML configuration exists.** Routing policy is a Python dict (`policies/quota_policy.py`), gate defaults are a Python dict (`policies/gate_policy.py`), style and research profiles do not exist. |
-| "Nothing is hardcoded" | Model IDs, the Ollama base URL, and the story angle are hardcoded. See ADR-0012 §3 and §4, and defects C-08, R-05. |
-| "runtime overrides in the database for anything the dashboard can toggle" | Not implemented. `GatePolicy.should_suspend` accepts a `policy_override` argument that no caller ever passes. |
+| "Nothing is hardcoded" | Model IDs and the Ollama base URL are still hardcoded (ADR-0012 §3, §4; defects C-08, R-05). The story angle is **no longer** hardcoded: stage 8 calls `ScriptAgent.select_story_angle` instead of the literal `"Origins and Preservation"` (2026-08-31, ADR-0016). |
+| "runtime overrides in the database for anything the dashboard can toggle" | Not implemented. The unused `policy_override` argument was removed from `GatePolicy.should_suspend` on 2026-08-31 (T-37). |

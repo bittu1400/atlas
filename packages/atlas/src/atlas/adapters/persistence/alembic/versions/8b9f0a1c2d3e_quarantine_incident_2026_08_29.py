@@ -72,12 +72,37 @@ def downgrade() -> None:
     This downgrade path exists for migration reversibility (ADR-0013), but in production,
     quarantined fabricated data must NEVER be treated as valid knowledge or production history.
     """
-    # 1. Restore rows from quarantine schema back into public in forward FK order
+    # 1. Restore rows from quarantine schema back into public in forward FK order.
+    #    Columns are matched by name, not by position: a later migration may have
+    #    added or dropped a column, and `SELECT *` would then line the wrong
+    #    values up against the wrong columns.
     for table in FORWARD_TABLES:
         op.execute(
-            f"INSERT INTO public.{table} "
-            f"SELECT * FROM incident_2026_08_29.{table} "
-            f"ON CONFLICT DO NOTHING;"
+            f"""
+            DO $$
+            DECLARE column_list text;
+            BEGIN
+                SELECT string_agg(quote_ident(q.column_name), ', ' ORDER BY q.ordinal_position)
+                INTO column_list
+                FROM information_schema.columns q
+                JOIN information_schema.columns p
+                  ON p.table_schema = 'public'
+                 AND p.table_name = q.table_name
+                 AND p.column_name = q.column_name
+                WHERE q.table_schema = 'incident_2026_08_29'
+                  AND q.table_name = '{table}';
+
+                IF column_list IS NULL THEN
+                    RETURN;
+                END IF;
+
+                EXECUTE format(
+                    'INSERT INTO public.%I (%s) SELECT %s FROM incident_2026_08_29.%I '
+                    'ON CONFLICT DO NOTHING',
+                    '{table}', column_list, column_list, '{table}'
+                );
+            END $$;
+            """
         )
 
     # 2. Drop the quarantine schema and its tables

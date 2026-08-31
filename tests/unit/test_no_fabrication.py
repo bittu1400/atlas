@@ -7,6 +7,7 @@ These checks enforce:
 - Rule R3: No real provider class returning hardcoded literals (Guard 4).
 - Rule R12: Secrets never leak into URLs or exceptions (Guard 5, T-09).
 - Rule R10: Policy validation methods have real production callers (Guard 6).
+- Rule R4: No sentence shaped like a historical fact inside a fake (Guard 7, SC-01).
 - Rule R7: STATUS.md honesty metrics (T-35).
 """
 
@@ -23,6 +24,29 @@ from atlas.application.ports.llm import LlmRequest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_DIR = REPO_ROOT / "packages" / "atlas" / "src" / "atlas"
 ADAPTERS_DIR = SRC_DIR / "adapters"
+FAKES_DIR = ADAPTERS_DIR / "fakes"
+
+# Guard 7 (SC-01, rule R4): the shape of a plausible historical sentence — a century reference,
+# a named polity, a dated claim, or the language of attestation.
+PLAUSIBLE_HISTORY_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\b\d{1,2}(?:st|nd|rd|th)[- ]century\b", re.I), "century reference"),
+    (re.compile(r"\b(?:in|by|around|circa|c\.)\s+\d{3,4}\b", re.I), "dated claim"),
+    (re.compile(r"\b\d{3,4}\s*(?:BCE?|AD|CE)\b"), "dated claim"),
+    (
+        re.compile(
+            r"\b(?:empire|dynasty|kingdom|caliphate|sultanate|emperor|pharaoh|antiquity)\b", re.I
+        ),
+        "named polity",
+    ),
+    (
+        re.compile(
+            r"\b(?:historical records|attests?|attested|treatises?|manuscripts?|chronicles?|"
+            r"archaeolog\w+|excavat\w+)\b",
+            re.I,
+        ),
+        "attestation language",
+    ),
+)
 
 
 def test_guard_1_no_dummy_or_mock_in_real_adapters() -> None:
@@ -55,10 +79,6 @@ def test_guard_1_no_dummy_or_mock_in_real_adapters() -> None:
     assert not violations, f"Anti-fabrication violations found: {violations}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Defects C-01, C-02: Production container imports fakes (remediated in T-26)",
-)
 def test_guard_2_no_fakes_imported_in_production_modules() -> None:
     """Rule R2, Invariant 5: No module outside adapters/fakes/ imports atlas.adapters.fakes."""
     violations = []
@@ -96,10 +116,6 @@ def test_guard_3_queue_adapter_does_not_reference_stub_broker() -> None:
     assert not violations, f"StubBroker referenced in queue adapter: {violations}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Defects C-04, C-05, C-06: Stubs wear real provider names and return literals (remediated in T-27/T-28)",
-)
 def test_guard_4_real_provider_classes_do_not_return_literals() -> None:
     """Rule R3: Classes named after real providers must not return hardcoded literals from port methods."""
     provider_class_prefixes = (
@@ -154,10 +170,6 @@ def test_guard_5_no_api_keys_in_url_constructions() -> None:
     assert not violations, f"API keys detected in URL construction: {violations}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Defect D-05: validate_ai_image_approval has no production callers (remediated in T-16)",
-)
 def test_guard_6_policy_validation_methods_have_production_callers() -> None:
     """Rule R10: Policy validation methods must have callers outside tests/ (catches D-05)."""
     policies_dir = SRC_DIR / "application" / "policies"
@@ -193,10 +205,76 @@ def test_guard_6_policy_validation_methods_have_production_callers() -> None:
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Defect F-04: STATUS.md contains unmeasured bare metric claims (remediated in T-31)",
-)
+def _plausible_history_hits(text: str) -> list[str]:
+    """Return the names of every plausible-history pattern the text matches.
+
+    Guard 7 exists because none of Guards 1-6 caught SC-01: two fabricated historical sentences
+    typed into a fake so a verbatim-evidence check would find something to match. The patterns are
+    crude on purpose — a false positive costs a rename, a false negative cost the 2026-08-29
+    incident.
+    """
+    return [name for pattern, name in PLAUSIBLE_HISTORY_PATTERNS if pattern.search(text)]
+
+
+def test_guard_7_no_plausible_history_in_fakes() -> None:
+    """Rule R4, SC-01: A fake may carry synthetic shape, never a sentence shaped like a fact."""
+    violations: list[str] = []
+
+    for py_file in FAKES_DIR.rglob("*.py"):
+        tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                continue
+            hits = _plausible_history_hits(node.value)
+            if hits:
+                violations.append(f"{py_file.name}:{node.lineno}: {hits} in {node.value[:80]!r}")
+
+    assert not violations, (
+        "Fakes contain sentences shaped like historical facts (rule R4, defect SC-01). "
+        f"A fake must read as obviously synthetic: {violations}"
+    )
+
+
+# Keyword arguments whose value becomes the content of a claim, an evidence quote, or a source
+# snippet. A century reference in a `value=` facet or an operator's critique is ordinary text; the
+# same words in one of these is a fact the fixture invented.
+CLAIM_SHAPED_KWARGS = frozenset({"text", "quote", "summary", "snippet", "narrative_thesis"})
+
+
+def test_guard_7_no_plausible_history_in_claim_shaped_fixtures() -> None:
+    """Rule R4: fixtures may carry synthetic shape, never an invented fact, anywhere in the repo."""
+    violations: list[str] = []
+
+    for search_dir in (REPO_ROOT / "tests", SRC_DIR):
+        for py_file in search_dir.rglob("*.py"):
+            tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.keyword) or node.arg not in CLAIM_SHAPED_KWARGS:
+                    continue
+                value = node.value
+                if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+                    continue
+                hits = _plausible_history_hits(value.value)
+                if hits:
+                    rel = py_file.relative_to(REPO_ROOT)
+                    violations.append(f"{rel}:{value.lineno}: {hits} in {value.value[:80]!r}")
+
+    assert not violations, (
+        "Claim-shaped fixtures contain invented historical facts (rule R4). Fixtures must be "
+        f"obviously synthetic: {violations}"
+    )
+
+
+def test_guard_7_detector_catches_a_fabricated_sentence() -> None:
+    """The guard is only worth its runtime if it fires; SC-01 slipped past six guards that did not."""
+    fabricated = (
+        "Historical records attest that PLACEHOLDER_GAME was played in the Wibble Empire "
+        "court in the 6th century."
+    )
+    assert _plausible_history_hits(fabricated)
+    assert not _plausible_history_hits("SUBJECT_A was recorded by SOURCE_B.")
+
+
 def test_status_honesty_check() -> None:
     """T-35, Rule R7: STATUS.md must contain no bare unmeasured metric claims (ADR-0014 §5)."""
     status_file = REPO_ROOT / "docs" / "STATUS.md"

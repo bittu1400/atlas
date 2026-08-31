@@ -38,6 +38,8 @@ class InMemorySourceRepository(SourceRepositoryPort):
         self.snapshots: dict[str, Snapshot] = {}
         self.evidence: dict[str, Evidence] = {}
         self.claims: dict[str, Claim] = {}
+        self.claim_history: dict[str, list[Claim]] = {}
+        self.claim_provenance: list[tuple[str, int, str, str]] = []
         self.links: list[ClaimEvidenceLink] = []
 
     async def save_topic(self, topic: Topic) -> Topic:
@@ -73,12 +75,19 @@ class InMemorySourceRepository(SourceRepositoryPort):
     async def get_evidence(self, evidence_id: str) -> Evidence | None:
         return self.evidence.get(evidence_id)
 
-    async def save_claim(self, claim: Claim) -> Claim:
-        self.claims[claim.id] = claim
-        return claim
+    async def save_claim(self, claim: Claim, actor_id: str, reason: str) -> Claim:
+        history = self.claim_history.setdefault(claim.id, [])
+        versioned = claim.model_copy(update={"version": len(history) + 1})
+        history.append(versioned)
+        self.claims[claim.id] = versioned
+        self.claim_provenance.append((claim.id, versioned.version, actor_id, reason))
+        return versioned
 
     async def get_claim(self, claim_id: str) -> Claim | None:
         return self.claims.get(claim_id)
+
+    async def get_claim_history(self, claim_id: str) -> list[Claim]:
+        return list(self.claim_history.get(claim_id, []))
 
     async def link_claim_evidence(self, link: ClaimEvidenceLink) -> None:
         self.links.append(link)
@@ -339,7 +348,7 @@ async def test_verification_agent_execution() -> None:
         source_id="src_01",
         snapshot_id="snp_01",
         locator="Section 1",
-        quote="Earliest chess rules date to 6th-century India.",
+        quote="SUBJECT_A was recorded by SOURCE_B.",
         stance=EvidenceStance.SUPPORTS,
         confidence=1.0,
         extracted_at=utc_now(),
@@ -348,13 +357,13 @@ async def test_verification_agent_execution() -> None:
 
     claim = Claim(
         id="clm_01",
-        text="Chess originated in 6th-century India.",
+        text="SUBJECT_A originated in PLACEHOLDER_REGION_D.",
         assertion_type=AssertionType.FACT,
         confidence=0.9,
         status=ClaimStatus.UNSUPPORTED,
         created_at=utc_now(),
     )
-    await source_repo.save_claim(claim)
+    await source_repo.save_claim(claim, actor_id="test.seed", reason="Fixture seed")
 
     agent = VerificationAgent(
         llm=llm,
@@ -392,13 +401,13 @@ async def test_script_agent_execution() -> None:
 
     claim = Claim(
         id="claim_01",
-        text="Chaturanga was an ancient Indian four-division military game.",
+        text="SUBJECT_A was recorded by SOURCE_B.",
         assertion_type=AssertionType.FACT,
         confidence=1.0,
         status=ClaimStatus.VERIFIED,
         created_at=utc_now(),
     )
-    await source_repo.save_claim(claim)
+    await source_repo.save_claim(claim, actor_id="test.seed", reason="Fixture seed")
 
     ko = KnowledgeObjectVersion(
         ko_id="ko_chess",
@@ -427,7 +436,7 @@ async def test_script_agent_execution() -> None:
         run_id="run_01",
         step_id="step_01",
     )
-    assert selected_angle == "The Court of Guptas"
+    assert selected_angle == "PLACEHOLDER_ANGLE_ALPHA"
 
     # 2. Test Script Generation
     result = await script_agent.generate_script(
@@ -462,13 +471,13 @@ async def test_judge_agent_execution() -> None:
 
     claim = Claim(
         id="claim_01",
-        text="Chaturanga was an ancient Indian four-division military game.",
+        text="SUBJECT_A was recorded by SOURCE_B.",
         assertion_type=AssertionType.FACT,
         confidence=1.0,
         status=ClaimStatus.VERIFIED,
         created_at=utc_now(),
     )
-    await source_repo.save_claim(claim)
+    await source_repo.save_claim(claim, actor_id="test.seed", reason="Fixture seed")
 
     ko = KnowledgeObjectVersion(
         ko_id="ko_chess",
@@ -492,7 +501,7 @@ async def test_judge_agent_execution() -> None:
     script_res = await script_agent.generate_script(
         ko_id="ko_chess",
         topic_title="Origin of Chess",
-        story_angle="The Court of Guptas",
+        story_angle="PLACEHOLDER_ANGLE_ALPHA",
         run_id="run_01",
         step_id="step_01",
     )
@@ -510,3 +519,137 @@ async def test_judge_agent_execution() -> None:
     assert len(eval_res.report.scores) == 8
     assert eval_res.weighted_score >= 78.0
     assert eval_res.passed is True
+
+
+@pytest.mark.asyncio
+async def test_extraction_agent_drops_non_verbatim_evidence_quote(tmp_path: Any) -> None:
+    """Invariant 1 / Defect D-04: Evidence quotes not present in snapshot text must be dropped."""
+    storage = LocalStorage(root_dir=str(tmp_path))
+    source_repo = InMemorySourceRepository()
+    knowledge_repo = InMemoryKnowledgeRepository()
+    exec_repo = InMemoryExecutionRepository()
+    quota_mgr = QuotaManager(execution_repo=exec_repo)  # type: ignore[arg-type]
+
+    from atlas.application.ports.llm import Extracted, LlmCapabilities, LlmRequest, StructuredLlm
+    from atlas.domain.common.enums import SourceTier
+    from atlas.domain.knowledge.models import AssertionType, EvidenceStance
+    from atlas.platform.ids import generate_snapshot_id, generate_source_id
+    from pydantic import BaseModel, HttpUrl
+
+    class CustomLlm(StructuredLlm):
+        @property
+        def capabilities(self) -> LlmCapabilities:
+            return LlmCapabilities(
+                tier=2,
+                supports_json=True,
+                supports_vision=True,
+                context_window_tokens=32768,
+                rpm_limit=10000,
+                rpd_limit=100000,
+            )
+
+        async def extract(self, _request: LlmRequest, _schema: type[BaseModel]) -> Extracted:
+            from atlas.application.agents.models import (
+                ExtractedClaimItem,
+                ExtractedEvidenceItem,
+                ExtractedLinkItem,
+                ExtractionPayload,
+            )
+
+            data = ExtractionPayload(
+                claims=[
+                    ExtractedClaimItem(
+                        text="Fact A", assertion_type=AssertionType.FACT, confidence=0.9
+                    ),
+                    ExtractedClaimItem(
+                        text="Fact B", assertion_type=AssertionType.FACT, confidence=0.9
+                    ),
+                ],
+                evidence=[
+                    ExtractedEvidenceItem(
+                        locator="Sec 1",
+                        quote="Verbatim quote from snapshot.",
+                        stance=EvidenceStance.SUPPORTS,
+                        confidence=1.0,
+                    ),
+                    ExtractedEvidenceItem(
+                        locator="Sec 2",
+                        quote="Hallucinated quote not in snapshot.",
+                        stance=EvidenceStance.SUPPORTS,
+                        confidence=1.0,
+                    ),
+                ],
+                links=[
+                    ExtractedLinkItem(
+                        claim_index=0,
+                        evidence_index=0,
+                        stance=EvidenceStance.SUPPORTS,
+                        notes="valid link",
+                    ),
+                    ExtractedLinkItem(
+                        claim_index=1,
+                        evidence_index=1,
+                        stance=EvidenceStance.SUPPORTS,
+                        notes="invalid link",
+                    ),
+                ],
+            )
+            return Extracted(
+                data=data,
+                input_tokens=100,
+                output_tokens=50,
+                latency_ms=10,
+                raw_response="",
+            )
+
+    import hashlib
+
+    source_bytes = b"Only this is here: Verbatim quote from snapshot. No other quotes."
+    content_hash = hashlib.sha256(source_bytes).hexdigest()
+    blob_key = await storage.put(source_bytes, "text/plain")
+
+    source = Source(
+        id=generate_source_id(),
+        title="Test Source",
+        url=HttpUrl("https://archive.org/details/test"),
+        source_tier=SourceTier.PRIMARY,
+        created_at=utc_now(),
+    )
+    await source_repo.save_source(source)
+
+    snapshot = Snapshot(
+        id=generate_snapshot_id(),
+        source_id=source.id,
+        content_hash=content_hash,
+        storage_key=blob_key,
+        byte_size=len(source_bytes),
+        mime_type="text/plain",
+        retrieved_at=utc_now(),
+    )
+    await source_repo.save_snapshot(snapshot)
+
+    agent = ExtractionAgent(
+        llm=CustomLlm(),
+        storage=storage,
+        source_repo=source_repo,
+        knowledge_repo=knowledge_repo,
+        quota_mgr=quota_mgr,
+    )
+
+    result = await agent.execute(
+        topic_id="test_topic",
+        topic_title="Test Topic",
+        snapshot_id=snapshot.id,
+        run_id="run_01",
+        step_id="step_01",
+    )
+
+    # Verbatim quote persisted, hallucinated quote dropped
+    assert result.evidence_count == 1
+    assert len(source_repo.evidence) == 1
+    saved_ev = list(source_repo.evidence.values())[0]
+    assert saved_ev.quote == "Verbatim quote from snapshot."
+
+    # Links to dropped evidence are dropped
+    assert len(source_repo.links) == 1
+    assert source_repo.links[0].evidence_id == saved_ev.id

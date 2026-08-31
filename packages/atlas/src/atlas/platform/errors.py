@@ -88,6 +88,15 @@ class ExecutionError(AtlasError):
     """Base error for workflow and pipeline execution."""
 
 
+class ExtractionTypeError(ExecutionError):
+    """Raised when an LLM extraction returns the wrong type."""
+
+    def __init__(self, expected: str, actual: str) -> None:
+        super().__init__(f"Expected extraction of type '{expected}', got '{actual}'")
+        self.expected = expected
+        self.actual = actual
+
+
 class RunNotFoundError(ExecutionError):
     """Raised when a requested Run is not found."""
 
@@ -132,6 +141,40 @@ class InvalidStateTransitionError(ExecutionError):
         super().__init__(f"Cannot transition from state '{current_state}' to '{target_state}'")
         self.current_state = current_state
         self.target_state = target_state
+
+
+class ProductionArtifactNotFoundError(ExecutionError):
+    """Raised when a stage needs a persisted production artifact that is missing.
+
+    Stages 10-18 read the Script, TimingPlan, Storyboard and RenderArtifact the
+    earlier stages wrote. A missing row means the pipeline would have to invent
+    one, which is exactly what Invariant 7 forbids.
+    """
+
+    def __init__(self, artifact_kind: str, artifact_id: str) -> None:
+        super().__init__(f"{artifact_kind} '{artifact_id}' not found")
+        self.artifact_kind = artifact_kind
+        self.artifact_id = artifact_id
+
+
+class UnapprovedScriptError(ExecutionError):
+    """Raised when a render is attempted from a script whose claims are not all verified."""
+
+    def __init__(self, script_id: str, offending_claim_ids: list[str]) -> None:
+        super().__init__(
+            f"Script '{script_id}' references claims that are not verified with evidence: "
+            f"{', '.join(sorted(offending_claim_ids))}"
+        )
+        self.script_id = script_id
+        self.offending_claim_ids = offending_claim_ids
+
+
+class PublisherNotConfiguredError(ExecutionError):
+    """Raised when the publish stage runs without a Publisher wired into the runner."""
+
+    def __init__(self, run_id: str) -> None:
+        super().__init__(f"Run '{run_id}' reached the publish stage with no publisher configured")
+        self.run_id = run_id
 
 
 class StepExecutionError(ExecutionError):

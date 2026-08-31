@@ -90,8 +90,8 @@ class VerificationAgent:
         extracted = await self.llm.extract(request, VerificationResultItem)
 
         await self.quota_mgr.record_invocation(
-            provider=route.provider,
-            model_id=route.model_id,
+            provider=extracted.provider,
+            model_id=extracted.model_id,
             prompt_version="fact_verification_v1",
             parameters={"temperature": route.temperature},
             code_version="phase-5-v1",
@@ -115,16 +115,21 @@ class VerificationAgent:
         else:
             status = ClaimStatus.UNSUPPORTED
 
-        # 5. Update claim status in persistence
+        # 5. Append a new claim version carrying the verdict (Invariant 4)
         updated_claim = Claim(
             id=claim.id,
             text=claim.text,
             assertion_type=claim.assertion_type,
             confidence=min(claim.confidence, result.confidence),
             status=status,
+            inferred_from_claim_ids=list(claim.inferred_from_claim_ids),
             created_at=claim.created_at,
         )
-        await self.source_repo.save_claim(updated_claim)
+        await self.source_repo.save_claim(
+            updated_claim,
+            actor_id="agent.verification",
+            reason=f"Verified against evidence {evidence_id}: {result.status}",
+        )
 
         logger.info(
             "verification.claim_completed",

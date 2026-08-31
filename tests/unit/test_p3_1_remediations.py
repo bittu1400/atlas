@@ -5,10 +5,10 @@ from datetime import time
 from unittest.mock import MagicMock
 
 import pytest
-from atlas.application.policies.gate_policy import DEFAULT_STAGE_GATES, PipelineStage
+from atlas.application.policies.gate_policy import DEFAULT_STAGE_GATES
 from atlas.application.policies.license_policy import LicensePolicy
 from atlas.application.policies.quota_policy import RoutingPolicy, TaskKind
-from atlas.domain.execution.models import Step, StepStatus
+from atlas.domain.execution.models import PipelineStage, Step, StepStatus
 from atlas.domain.publishing.models import BlackoutRule
 from atlas.platform.cache import ResponseCache
 from atlas.platform.config import clear_settings_cache, get_settings

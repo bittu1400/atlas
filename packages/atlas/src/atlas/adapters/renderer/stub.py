@@ -1,4 +1,15 @@
-"""Remotion Renderer adapter."""
+"""Stub renderer.
+
+Rule R3: this stub does not wear the name of the thing it is standing in for.
+No Remotion composition is mounted and no node process is spawned — the frames
+are a flat ffmpeg colour field. The real renderer is deferred (D57), and
+`docs/STATUS.md` says rendering does not exist.
+
+What is real here is the *shape* of the output: the WebVTT captions come from
+the persisted TimingPlan, the duration comes from that plan, and the frame size
+follows the requested RenderTarget, so a downstream consumer sees a correctly
+described artifact rather than a silently vertical one.
+"""
 
 import os
 import subprocess
@@ -10,6 +21,15 @@ from atlas.application.ports.renderer import Renderer
 from atlas.application.ports.storage import Storage
 from atlas.domain.media.models import RenderArtifact, RenderTarget, Storyboard
 from atlas.domain.script.models import TimingPlan
+from atlas.platform.logging import get_logger
+
+logger = get_logger("adapters.renderer.stub")
+
+# 9:16 and 16:9 at the resolutions packages/tokens declares.
+TARGET_RESOLUTIONS: dict[RenderTarget, tuple[int, int]] = {
+    RenderTarget.VERTICAL: (1080, 1920),
+    RenderTarget.HORIZONTAL: (1920, 1080),
+}
 
 
 def format_timestamp(seconds: float) -> str:
@@ -34,8 +54,8 @@ def generate_webvtt(timing_plan: TimingPlan) -> str:
     return "\n".join(lines)
 
 
-class RemotionRenderer(Renderer):
-    """Adapter for rendering compositions into MP4 video and WebVTT captions using Remotion / ffmpeg."""
+class StubRenderer(Renderer):
+    """Produces a placeholder MP4 plus real captions from the persisted TimingPlan."""
 
     def __init__(self, storage: Storage):
         self.storage = storage
@@ -48,46 +68,42 @@ class RemotionRenderer(Renderer):
         run_id: str,
     ) -> RenderArtifact:
         """Render a single aspect ratio target from storyboard and timing plan."""
-        # Generate WebVTT
         webvtt_content = generate_webvtt(timing_plan)
         vtt_key = await self.storage.put(webvtt_content.encode("utf-8"), "text/vtt")
 
-        # Get total duration
         duration = timing_plan.total_duration_seconds
+        width, height = TARGET_RESOLUTIONS[target]
+
+        logger.info(
+            "render.stub_invoked",
+            run_id=run_id,
+            storyboard_id=storyboard.id,
+            render_target=target.value,
+            resolution=f"{width}x{height}",
+            duration_seconds=duration,
+            scenes=len(storyboard.scenes),
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             video_path = os.path.join(tmpdir, "video.mp4")
             audio_path = os.path.join(tmpdir, "audio.wav")
             out_path = os.path.join(tmpdir, "output.mp4")
 
-            # 1. Mock rendering video via apps/renderer/src/render.sh
-            # We call it using bash to avoid needing execute permissions
-            script_path = os.path.abspath("apps/renderer/src/render.sh")
-            if not os.path.exists(script_path):
-                # Fallback if script doesn't exist for some reason
-                subprocess.run(
-                    [
-                        "ffmpeg",
-                        "-y",
-                        "-f",
-                        "lavfi",
-                        "-i",
-                        f"color=c=blue:s=1080x1920:d={duration}",
-                        "-c:v",
-                        "libx264",
-                        video_path,
-                    ],
-                    check=True,
-                    capture_output=True,
-                )
-            else:
-                subprocess.run(
-                    ["bash", script_path, video_path, str(duration)],
-                    check=True,
-                    capture_output=True,
-                )
-
-            # 2. Mock audio using ffmpeg
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    f"color=c=black:s={width}x{height}:d={duration}",
+                    "-c:v",
+                    "libx264",
+                    video_path,
+                ],
+                check=True,
+                capture_output=True,
+            )
             subprocess.run(
                 [
                     "ffmpeg",
@@ -103,8 +119,6 @@ class RemotionRenderer(Renderer):
                 check=True,
                 capture_output=True,
             )
-
-            # 3. Mux video and audio
             subprocess.run(
                 [
                     "ffmpeg",
@@ -127,7 +141,6 @@ class RemotionRenderer(Renderer):
                 video_bytes = f.read()
 
         video_key = await self.storage.put(video_bytes, "video/mp4")
-        file_size = len(video_bytes)
 
         return RenderArtifact(
             id=f"ra_{uuid.uuid4().hex[:8]}",
@@ -137,7 +150,14 @@ class RemotionRenderer(Renderer):
             video_storage_key=video_key,
             captions_storage_key=vtt_key,
             duration_seconds=duration,
-            file_size_bytes=file_size,
-            metadata={"renderer": "RemotionRenderer", "mocked": True},
+            file_size_bytes=len(video_bytes),
+            metadata={
+                "renderer": "StubRenderer",
+                "is_stub": True,
+                "resolution": f"{width}x{height}",
+                "script_id": storyboard.script_id,
+                "timing_plan_id": storyboard.timing_plan_id,
+                "scene_count": len(storyboard.scenes),
+            },
             created_at=datetime.now(UTC),
         )

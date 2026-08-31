@@ -34,4 +34,10 @@ class TopicDiscoveryAgent:
         )
 
         extracted = await self.llm.extract(request, TopicDiscoveryPayload)
-        return extracted.data.topics
+        if not isinstance(extracted.data, TopicDiscoveryPayload):
+            from atlas.platform.errors import ExtractionTypeError
+
+            raise ExtractionTypeError(
+                expected="TopicDiscoveryPayload", actual=type(extracted.data).__name__
+            )
+        return list(extracted.data.topics)

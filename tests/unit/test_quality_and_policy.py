@@ -1,9 +1,9 @@
 """Unit tests for Quality Rubric, License Policy, Gate Policy, and Response Cache."""
 
 import pytest
-from atlas.application.policies.gate_policy import GatePolicy, PipelineStage
+from atlas.application.policies.gate_policy import GatePolicy
 from atlas.application.policies.license_policy import LicensePolicy
-from atlas.domain.execution.models import GateType
+from atlas.domain.execution.models import GateType, PipelineStage
 from atlas.domain.quality.models import (
     RUBRIC_WEIGHTS,
     DimensionScore,
@@ -82,9 +82,9 @@ def test_quality_report_failing_due_to_dimension_floor() -> None:
     assert report.weighted_score >= 78.0  # Overall is high, but floor failed
 
 
-def test_license_policy_compatibility() -> None:
-    """Verify commercial license whitelist and rejection of NC/ND terms."""
-    # Permissible licenses
+def test_license_policy_allowlist_and_restrictions() -> None:
+    """Verify license policy correctly enforces allowed vs forbidden licenses."""
+    # Permitted licenses
     assert LicensePolicy.validate_asset_license("ast_01", "cc-by-4.0") is True
     assert LicensePolicy.validate_asset_license("ast_02", "cc0") is True
     assert LicensePolicy.validate_asset_license("ast_03", "public domain") is True
@@ -116,6 +116,28 @@ def test_gate_policy_ai_image_mandatory_approval() -> None:
     )
     assert should_susp_ai is True
     assert gate_type_ai == GateType.MANUAL
+
+
+def test_gate_policy_hybrid_and_contested_claims() -> None:
+    """Verify SPEC §6: FACT_VERIFICATION (manual on contested) and STORY_ANGLE (hybrid)."""
+    # FACT_VERIFICATION without contested claims -> does not suspend
+    should_susp, gate_type = GatePolicy.should_suspend(
+        PipelineStage.FACT_VERIFICATION, has_contested_claims=False
+    )
+    assert should_susp is False
+    assert gate_type == GateType.HYBRID
+
+    # FACT_VERIFICATION with contested claims -> suspends for operator review
+    should_susp_c, gate_type_c = GatePolicy.should_suspend(
+        PipelineStage.FACT_VERIFICATION, has_contested_claims=True
+    )
+    assert should_susp_c is True
+    assert gate_type_c == GateType.HYBRID
+
+    # STORY_ANGLE -> Atlas proposes, operator picks (always suspends as HYBRID)
+    should_susp_a, gate_type_a = GatePolicy.should_suspend(PipelineStage.STORY_ANGLE)
+    assert should_susp_a is True
+    assert gate_type_a == GateType.HYBRID
 
 
 def test_response_cache_key_determinism() -> None:

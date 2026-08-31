@@ -6,6 +6,7 @@ import pytest
 from atlas.adapters.persistence.repositories.execution_repository import ExecutionRepository
 from atlas.adapters.persistence.repositories.focus_repository import FocusRepository
 from atlas.adapters.persistence.repositories.knowledge_repository import KnowledgeRepository
+from atlas.adapters.persistence.repositories.production_repository import ProductionRepository
 from atlas.adapters.persistence.repositories.publishing_repository import PublishingRepository
 from atlas.adapters.persistence.repositories.source_repository import SourceRepository
 from atlas.adapters.storage.local import LocalStorage
@@ -67,13 +68,14 @@ def api_client(db_session: AsyncSession, test_storage: LocalStorage) -> AsyncCli
 
     app.dependency_overrides[get_queue_broker] = lambda: FakeQueueBroker()
 
-    def override_get_pipeline_runner():
+    def override_get_pipeline_runner() -> PipelineRunner:
         return PipelineRunner(
             execution_repo=ExecutionRepository(db_session),
             knowledge_repo=KnowledgeRepository(db_session),
             focus_repo=FocusRepository(db_session),
             source_repo=SourceRepository(db_session),
             publishing_repo=PublishingRepository(db_session),
+            production_repo=ProductionRepository(db_session),
             storage=test_storage,
             llm=FakeLlm(),
             embedder=FakeEmbedder(),

@@ -111,16 +111,6 @@ class RoutingPolicy:
     }
 
     @classmethod
-    def get_route(cls, task: TaskKind, use_fakes: bool = True) -> ModelRoute:
-        """Get model route, defaulting to fake provider in test environments."""
-        route = cls.DEFAULT_ROUTES[task]
-        if use_fakes:
-            return ModelRoute(
-                task=task,
-                tier=route.tier,
-                provider="fake",
-                model_id=f"fake-{route.model_id}",
-                temperature=route.temperature,
-                max_tokens=route.max_tokens,
-            )
-        return route
+    def get_route(cls, task: TaskKind) -> ModelRoute:
+        """Get model route for a task kind."""
+        return cls.DEFAULT_ROUTES[task]

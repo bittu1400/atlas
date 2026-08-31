@@ -53,3 +53,5 @@ decision, it is a preference.
 | [0012](0012-tier-1-primary-inference.md) | Tier 1 becomes primary inference; Tier 2 reserved for verification | Accepted |
 | [0013](0013-fabricated-data-quarantine.md) | Fabricated data is quarantined, never deleted | Accepted |
 | [0014](0014-anti-fabrication-enforcement.md) | Anti-fabrication rules enforced by CI and pre-commit | Accepted |
+| [0015](0015-append-only-claim-versions.md) | Claim state is append-only: identity row plus `claim_versions` | Accepted |
+| [0016](0016-production-artifacts-are-persisted.md) | Scripts, timing plans, storyboards and render artifacts are persisted | Accepted |

@@ -33,7 +33,8 @@ def main() -> None:
     if len(sys.argv) > 1:
         run_id = sys.argv[1]
         logger.info("worker.running_single_task", run_id=run_id)
-        asyncio.run(execute_pipeline_task(run_id))
+        # A dramatiq actor is a sync callable; calling it runs the task in-process.
+        execute_pipeline_task(run_id)
     else:
         logger.info("worker.running_poll_loop")
         asyncio.run(run_worker_loop())

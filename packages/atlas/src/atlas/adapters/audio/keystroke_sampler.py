@@ -20,7 +20,7 @@ class KeystrokeSampler:
         if len(samples) < 5:
             raise ValueError("Must provide at least 5 distinct keystroke samples.")
         self.samples = samples
-        self._last_sample = None
+        self._last_sample: str | None = None
 
     def get_sample(self) -> KeystrokeModifier:
         """Select a sample non-consecutively with randomized velocity and pitch/timbre."""

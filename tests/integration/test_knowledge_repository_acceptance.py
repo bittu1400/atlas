@@ -123,7 +123,7 @@ async def test_full_knowledge_object_and_traceability_lifecycle(
         status=ClaimStatus.VERIFIED,
         created_at=now,
     )
-    await source_repo.save_claim(claim)
+    await source_repo.save_claim(claim, actor_id="test.seed", reason="Fixture seed")
     await source_repo.link_claim_evidence(
         ClaimEvidenceLink(
             claim_id=claim_id,
@@ -284,7 +284,7 @@ async def test_claim_usage_impact_index_for_retractions(
         status=ClaimStatus.CONTESTED,
         created_at=now,
     )
-    await source_repo.save_claim(claim)
+    await source_repo.save_claim(claim, actor_id="test.seed", reason="Fixture seed")
 
     # Record Claim Usage in Render Output
     usage = ClaimUsage(

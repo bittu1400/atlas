@@ -4,6 +4,7 @@ from atlas.adapters.persistence.tables import (
     ClaimEvidenceTable,
     ClaimTable,
     ClaimUsageTable,
+    ClaimVersionTable,
     EvidenceTable,
     SnapshotTable,
     SourceTable,
@@ -23,6 +24,7 @@ from atlas.domain.knowledge.models import (
     Topic,
     TopicStatus,
 )
+from atlas.platform.clock import utc_now
 from atlas.platform.errors import (
     SnapshotNotFoundError,
     SourceNotFoundError,
@@ -204,43 +206,91 @@ class SourceRepository:
     # Claims & Evidence Linking
     # =========================================================================
 
-    async def save_claim(self, claim: Claim) -> Claim:
-        """Persist or update a Claim."""
-        existing = await self.session.get(ClaimTable, claim.id)
-        if existing:
-            existing.text = claim.text
-            existing.assertion_type = claim.assertion_type.value
-            existing.confidence = claim.confidence
-            existing.status = claim.status.value
-            existing.inferred_from_claim_ids = list(claim.inferred_from_claim_ids)
-        else:
-            row = ClaimTable(
-                id=claim.id,
+    async def save_claim(self, claim: Claim, actor_id: str, reason: str) -> Claim:
+        """Append a new immutable version of a Claim and return it with its version number.
+
+        Nothing is updated in place (Invariant 4): the identity row is written once
+        and every later change is a new `claim_versions` row carrying the actor and
+        the reason, so a status transition is always attributable.
+        """
+        identity = await self.session.get(ClaimTable, claim.id)
+        if identity is None:
+            self.session.add(ClaimTable(id=claim.id, created_at=claim.created_at))
+            await self.session.flush()
+
+        latest = await self._latest_claim_version(claim.id)
+        next_version = (latest.version + 1) if latest else 1
+
+        self.session.add(
+            ClaimVersionTable(
+                claim_id=claim.id,
+                version=next_version,
                 text=claim.text,
                 assertion_type=claim.assertion_type.value,
                 confidence=claim.confidence,
                 status=claim.status.value,
                 inferred_from_claim_ids=list(claim.inferred_from_claim_ids),
-                created_at=claim.created_at,
+                actor_id=actor_id,
+                reason=reason,
+                created_at=utc_now(),
             )
-            self.session.add(row)
+        )
         await self.session.flush()
-        return claim
+        return claim.model_copy(update={"version": next_version})
+
+    async def _latest_claim_version(self, claim_id: str) -> ClaimVersionTable | None:
+        """Return the highest-numbered version row for a Claim, or None."""
+        stmt = (
+            select(ClaimVersionTable)
+            .where(ClaimVersionTable.claim_id == claim_id)
+            .order_by(ClaimVersionTable.version.desc())
+            .limit(1)
+        )
+        return (await self.session.execute(stmt)).scalars().first()
 
     async def get_claim(self, claim_id: str) -> Claim | None:
-        """Fetch Claim by ID."""
-        row = await self.session.get(ClaimTable, claim_id)
-        if not row:
+        """Fetch the current state of a Claim: its highest-numbered version."""
+        identity = await self.session.get(ClaimTable, claim_id)
+        if not identity:
+            return None
+        version_row = await self._latest_claim_version(claim_id)
+        if not version_row:
             return None
         return Claim(
-            id=row.id,
-            text=row.text,
-            assertion_type=AssertionType(row.assertion_type),
-            confidence=row.confidence,
-            status=ClaimStatus(row.status),
-            inferred_from_claim_ids=list(row.inferred_from_claim_ids or []),
-            created_at=row.created_at,
+            id=identity.id,
+            version=version_row.version,
+            text=version_row.text,
+            assertion_type=AssertionType(version_row.assertion_type),
+            confidence=version_row.confidence,
+            status=ClaimStatus(version_row.status),
+            inferred_from_claim_ids=list(version_row.inferred_from_claim_ids or []),
+            created_at=identity.created_at,
         )
+
+    async def get_claim_history(self, claim_id: str) -> list[Claim]:
+        """Return every version of a Claim, oldest first, for provenance inspection."""
+        identity = await self.session.get(ClaimTable, claim_id)
+        if not identity:
+            return []
+        stmt = (
+            select(ClaimVersionTable)
+            .where(ClaimVersionTable.claim_id == claim_id)
+            .order_by(ClaimVersionTable.version.asc())
+        )
+        rows = (await self.session.execute(stmt)).scalars().all()
+        return [
+            Claim(
+                id=identity.id,
+                version=r.version,
+                text=r.text,
+                assertion_type=AssertionType(r.assertion_type),
+                confidence=r.confidence,
+                status=ClaimStatus(r.status),
+                inferred_from_claim_ids=list(r.inferred_from_claim_ids or []),
+                created_at=identity.created_at,
+            )
+            for r in rows
+        ]
 
     async def link_claim_evidence(self, link: ClaimEvidenceLink) -> None:
         """Associate Evidence with a Claim."""

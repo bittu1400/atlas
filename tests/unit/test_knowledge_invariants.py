@@ -92,7 +92,7 @@ def test_allows_valid_inference_with_parent_claims_and_evidence() -> None:
     """Valid inference claim with parents and evidence passes."""
     claim = Claim(
         id="clm_05",
-        text="Therefore tiger populations declined in the 20th century.",
+        text="Therefore SUBJECT_A declined across PLACEHOLDER_PERIOD_E.",
         assertion_type=AssertionType.INFERENCE,
         confidence=0.95,
         status=ClaimStatus.VERIFIED,

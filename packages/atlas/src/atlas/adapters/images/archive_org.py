@@ -97,6 +97,7 @@ class InternetArchiveSearch(ImageSearch):
                 author=author,
                 source_archive="Internet Archive",
                 preview_url=preview_url,
+                is_ai_generated=False,
             )
 
             try:

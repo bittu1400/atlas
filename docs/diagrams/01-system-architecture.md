@@ -72,7 +72,7 @@ This document visualizes the complete system architecture of Atlas, demonstratin
 |  | External Providers (Tier 0 / 1 / 2):  | |    |  +--------------------------------+ |
 |  |  - GeminiAdapter (Tier 2 Frontier)    | |    |  | Execution State Machine:       | |
 |  |  - OllamaAdapter (Tier 1 Local 8GB)   | |    |  |  - Run, Step, Gate, Approval   | |
-|  |  - RemotionRenderer (Node Bridge)     | |    |  |  - ResourceLock, QuotaLedger   | |
+|  |  - StubRenderer (no Remotion yet)    | |    |  |  - ResourceLock, QuotaLedger   | |
 |  +---------------------------------------+ |    |  +--------------------------------+ |
 +---------------------+----------------------+    +-------------------------------------+
                       |

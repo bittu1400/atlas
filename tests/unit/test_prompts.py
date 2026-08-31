@@ -35,11 +35,11 @@ def test_render_prompt_success() -> None:
         source_title="Ancient History Archive",
         source_url="https://archive.org/details/chess",
         source_tier="primary",
-        source_text="Chaturanga was played in 6th century India.",
+        source_text="SUBJECT_A was recorded by SOURCE_B.",
     )
     assert "Origin of Chess" in rendered
     assert "Ancient History Archive" in rendered
-    assert "Chaturanga was played in 6th century India." in rendered
+    assert "SUBJECT_A was recorded by SOURCE_B." in rendered
     assert "{{" not in rendered
 
 

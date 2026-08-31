@@ -135,8 +135,7 @@ Failure mode that must be handled, not hidden: a Focus too narrow to yield candi
 
 ## 6. Pipeline
 
-Gate policy shown is the Phase 1 default for ORIGINS. Every gate is switchable to `automatic`,
-`manual`, or `hybrid` from the dashboard and the CLI.
+Gate policy shown is the Phase 1 default for ORIGINS.
 
 | # | Stage | Produces | Gate |
 |---|---|---|---|
@@ -439,7 +438,15 @@ Non-blocking, needed before the phase noted.
 where the code on disk disagrees with them. Per the header rule, **every row below is a defect in
 the code, not a correction to the spec.** Defect IDs refer to `docs/AUDIT-2026-08-29.md` §3.
 
-Verified against HEAD `9938244`.
+Verified against HEAD `9938244`. **Re-verified 2026-08-29 (Stage C remediation session, audit §11)**
+against HEAD `c776b59` plus the working tree: **no row changed.** That session's work (T-43, T-44,
+T-45, T-51, T-52) removed fabricated fixture text, added the anti-fabrication guard, and made
+Knowledge Object assembly refuse untraceable Claims — all of which move the code **towards** §1–16,
+not away from it, and none of which touches a divergence recorded here.
+
+**Re-verified 2026-08-31** (independent verification session, audit §13): §17.2's stage 11 row
+(SC-03) is **closed** — see the row itself. §17.5's duration bound (R-04) is unchanged and still
+open.
 
 ### 17.1 Pipeline stage count and numbering (§6)
 
@@ -453,16 +460,18 @@ said 17 while `docs/STATUS.md` said 18.
 
 ### 17.2 Gate policy (§6)
 
+**Updated 2026-08-29 (Stage C review, D71).** The stage 5 and stage 7 rows were **deleted**: after
+T-37, `DEFAULT_STAGE_GATES` sets both to `HYBRID`, the runner passes `has_contested_claims` and
+`has_ai_generated_assets`, and no branch in `gate_policy.py` is unreachable. Per **D55** a row is
+deleted only when the code matches the doc. The stage 11 row is rewritten, not deleted — it now
+diverges in a different way.
+
 | Spec stage | Spec gate | `DEFAULT_STAGE_GATES` in code | Divergence |
 |---|---|---|---|
-| 5 · Fact verification | **hybrid** — manual on `contested` | `AUTOMATIC` | Contested claims are **never escalated to a human.** `GatePolicy.should_suspend` has the hybrid branch, but the runner calls it as `should_suspend(stage)` (`runner.py:268`), so `has_contested_claims` is always `False` and the branch is dead. |
-| 7 · Story angle | **hybrid** — Atlas proposes, operator picks | `AUTOMATIC` | The operator never picks. The runner hardcodes `story_angle="Origins and Preservation"` (defect R-05). |
-| 11 · Asset selection | **manual**, always manual for AI-generated | `MANUAL` | Suspends correctly, but the AI-specific branch is dead for the same reason: `has_ai_generated_assets` is never passed. Combined with `validate_ai_image_approval()` having no production caller (defect D-05), **Invariant 9 has no runtime enforcement at all.** |
+| 11 · Asset selection | **manual**, always manual for AI-generated | `MANUAL`, forced `MANUAL` when an AI asset is present | **Closed 2026-08-31 (defects SC-03, B1).** The check runs at `STORYBOARD_CUTS` and resolves the asset-selection gate by its deterministic step ID, then requires an `Approval` row with `decision == approved` — `ExecutionRepository.list_approvals_for_run` was added for it. A gate row flipped to `approved` with no Approval is not approval. Both directions are tested: an unapproved AI asset fails the run, an approved one renders. |
 | 17 · Publish | "Phase 1: manual export. Interface stubbed." | `AUTOMATIC` | The stage returns a string and never calls the publisher (defect R-03). "Stubbed" is accurate; "records that it did not publish" is not implemented. |
 
-§6 also states "Every gate is switchable to `automatic`, `manual`, or `hybrid` from the dashboard and
-the CLI." `GatePolicy.should_suspend` accepts a `policy_override` parameter; **no caller passes it**,
-and no dashboard or CLI surface exists for it.
+
 
 ### 17.3 Approval semantics (§7)
 
@@ -515,8 +524,9 @@ mapping the old STATUS phase names onto these phases so the Phase-6 adapter work
 than lost. Audit tasks **T-38** (reconcile) then **T-31** (rewrite STATUS), in that order.
 
 **Also decided (D57):** the real Remotion renderer is **deferred**. Phase 7 ends at a correct
-Knowledge Object, a verified Script and a real Storyboard. `RemotionRenderer` is renamed
-`StubRenderer`; the data path into it is still fixed so the real renderer is a later drop-in.
+Knowledge Object, a verified Script and a real Storyboard. `RemotionRenderer` was renamed
+`StubRenderer` on 2026-08-31 (D96), and the data path into it is now fixed: the renderer receives
+the persisted Storyboard and Timing Plan for the run (ADR-0016), so the real renderer is a drop-in.
 
 ### 17.7 Open questions (§16) — status at 2026-08-29
 

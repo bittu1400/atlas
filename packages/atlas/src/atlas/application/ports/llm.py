@@ -65,6 +65,8 @@ class Extracted(BaseModel):
     output_tokens: int = Field(ge=0, description="Output tokens used")
     latency_ms: int = Field(ge=0, description="Latency in ms")
     raw_response: str = Field(description="Raw text output before parsing")
+    model_id: str = Field(default="unknown", description="Model identifier that executed the call")
+    provider: str = Field(default="unknown", description="Provider name (gemini, ollama, fake)")
 
 
 class Llm(Protocol):

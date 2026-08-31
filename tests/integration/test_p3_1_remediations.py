@@ -9,11 +9,12 @@ import pytest
 from atlas.adapters.persistence.repositories.execution_repository import ExecutionRepository
 from atlas.adapters.persistence.repositories.focus_repository import FocusRepository
 from atlas.adapters.persistence.repositories.knowledge_repository import KnowledgeRepository
+from atlas.adapters.persistence.repositories.production_repository import ProductionRepository
 from atlas.adapters.persistence.repositories.publishing_repository import PublishingRepository
 from atlas.adapters.persistence.repositories.source_repository import SourceRepository
 from atlas.adapters.storage.local import LocalStorage
 from atlas.application.pipeline.runner import PipelineRunner
-from atlas.application.policies.gate_policy import PipelineStage
+from atlas.application.ports.llm import LlmCapabilities
 from atlas.application.usecases.get_run_status import GetQuotaStatusUseCase, ListGatesUseCase
 from atlas.domain.execution.models import (
     Approval,
@@ -21,6 +22,7 @@ from atlas.domain.execution.models import (
     Gate,
     GateStatus,
     GateType,
+    PipelineStage,
     QuotaLedgerEntry,
     Run,
     RunStatus,
@@ -293,9 +295,14 @@ async def test_runner_stage_failure_handling(db_session: AsyncSession) -> None:
     focus_repo = FocusRepository(db_session)
     src_repo = SourceRepository(db_session)
     pub_repo = PublishingRepository(db_session)
+    prod_repo = ProductionRepository(db_session)
     quota_mgr = QuotaManager(exec_repo)
 
     class FailingLlm:
+        @property
+        def capabilities(self) -> LlmCapabilities:
+            return LlmCapabilities(tier=2)
+
         async def extract(self, *_args: Any, **_kwargs: Any) -> Any:
             raise ConnectionError("Upstream LLM provider down")
 
@@ -319,6 +326,7 @@ async def test_runner_stage_failure_handling(db_session: AsyncSession) -> None:
         focus_repo=focus_repo,
         source_repo=src_repo,
         publishing_repo=pub_repo,
+        production_repo=prod_repo,
         storage=storage,
         llm=FailingLlm(),
         embedder=FakeEmbedder(),

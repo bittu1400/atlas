@@ -50,8 +50,20 @@ The single source every renderer reads from. Never edited in place.
 **Knowledge Object Status** — Lifecycle states of a Knowledge Object version: `draft` | `verified` | `published` | `archived`.
 
 **Claim** — One atomic statement, typed by **Assertion Type**, carrying confidence and a validity window.
+Its identity is permanent; its state is append-only (see **Claim Version**).
 
-**Claim Status** — Verification state of an atomic Claim: `verified` | `unsupported` | `refuted` | `contested`.
+**Claim Version** — One immutable revision of a Claim's state — text, assertion type, confidence,
+status — together with the actor who wrote it and the reason they gave. A Claim's current state is
+its highest-numbered version. Nothing is ever updated in place (Invariant 4, ADR-0015).
+
+### Claim Status
+
+The verification verdict assigned by the Pipeline:
+*   **unverified**: Freshly extracted, not yet subjected to verification.
+*   **verified**: The claim is factually accurate based on provided evidence.
+*   **unsupported**: Evidence exists but does not adequately substantiate the claim, or no evidence exists.
+*   **refuted**: Evidence contradicts the claim.
+*   **contested**: The system could not reach a high-confidence consensus, escalating to the operator.
 
 **Assertion Type** — `fact` | `inference` | `opinion` | `contested`. Required on every Claim. A Claim
 whose type is `inference` must name the Claims it was inferred from.
@@ -105,7 +117,18 @@ permitted, what attribution is required, and where that attribution must appear.
 **Render Target** — The output configuration: aspect ratio, resolution, frame rate, duration. One
 Storyboard renders to several Targets.
 
-**Render** — A produced media file for one Render Target, recording every input version that made it.
+**Render Artifact** — A produced media file for one Render Target, persisted with the Storyboard it
+came from, its captions, its duration, and the metadata recording how it was made.
+
+**Production Artifact** — Collective name for the per-Run artifacts of pipeline stages 8-15: the
+**Script**, its **Timing Plan**, the **Storyboard**, and the **Render Artifacts**. Each is persisted
+and immutable: a rewrite is a new artifact with a new ID, never an edit (ADR-0016). Later stages read
+the persisted artifact rather than regenerating one, so the artifact an operator approved is the
+artifact that ships.
+
+**Stub Adapter** — An adapter that stands in for a capability Atlas does not have yet, named `Stub*`
+so it can never be mistaken for the real thing (rule R3). `StubRenderer`, `StubPublisher` and
+`StubImageGenerator` are the current ones; `docs/STATUS.md` says what does not exist.
 
 ---
 
@@ -128,6 +151,38 @@ feedback that regeneration consumes.
 **Resource Lock** — Named concurrency lease with expiring TTL (e.g. GPU lease) to coordinate exclusive resource access across workers.
 
 **Idempotency Key** — Unique composite execution key (`run_id:step_name:input_hash`) preventing duplicate side-effects.
+
+**Verbatim Evidence Check** — The rule, enforced in `ExtractionAgent`, that an Evidence quote is
+persisted only if it occurs as a substring of the decoded Snapshot bytes (whitespace normalised).
+A quote that fails is dropped and logged `evidence.rejected_not_verbatim`; the stage does not fail.
+This is what makes a hallucinated quote unable to become Evidence.
+
+**Pre-Output Invariant Gate** — The single backstop check run immediately before rendering, which
+fails the Run if any Claim referenced by the Script is not `verified`, has no Evidence link, or has
+no provenance row. It exists so that fabrication is structurally unable to reach an output, rather
+than merely discouraged. Distinct from a **Gate**: no human resolves it and it never suspends — it
+either passes or fails the Run with a typed domain exception.
+
+**Plausible-History Guard** — Guard 7 in `tests/unit/test_no_fabrication.py`. It refuses any string
+inside `adapters/fakes/`, and any claim-shaped fixture value anywhere in `tests/` or
+`packages/atlas/src`, that carries the shape of a historical fact: a century reference, a dated
+claim, a named polity, or the language of attestation. It exists because six guards existed on
+2026-08-29 and none of them noticed two fabricated historical sentences being typed into a fake
+(defect SC-01). A fixture must read as obviously synthetic — `SUBJECT_A`, `SOURCE_B` — so that a
+fixture can never be mistaken for a fact.
+
+**Claim-Shaped Fixture** — A test or source value passed as `text=`, `quote=`, `summary=`,
+`snippet=` or `narrative_thesis=`, i.e. one that becomes the content of a Claim, an Evidence quote,
+or a source snippet. The distinction matters because these are the only strings where an invented
+sentence can be mistaken for knowledge; a century in a Focus facet or in an operator's critique is
+ordinary text and is deliberately not guarded.
+
+**Traceability Refusal** — The rule, `validate_knowledge_object_claims_are_traceable` in
+`domain/knowledge/invariants.py`, that a Knowledge Object version naming a Claim with no
+`claim_evidence` row is **refused** with a typed exception naming the offending Claim IDs — never
+saved with the untraceable Claims filtered out. Enforced in `KnowledgeRepository.save_version`
+before any row is written, so a refused version leaves no version row, no claim rows and no current
+pointer. Silent filtering (defect SC-04) let an Invariant 1 violation pass as a green test.
 
 **Quality Report** — Scores per rubric dimension plus the deterministic check results, with a pass or
 fail verdict against the Channel's threshold.

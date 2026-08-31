@@ -16,7 +16,6 @@ from atlas.adapters.container import Container
 from atlas.adapters.persistence.database import get_session_manager, reset_session_manager
 from atlas.adapters.persistence.repositories.execution_repository import ExecutionRepository
 from atlas.adapters.persistence.repositories.focus_repository import FocusRepository
-from atlas.application.pipeline.runner import PipelineRunner
 from atlas.application.usecases.approve_gate import ApproveGateUseCase
 from atlas.application.usecases.create_run import CreateRunUseCase
 from atlas.application.usecases.get_run_status import (
@@ -50,17 +49,25 @@ app.add_typer(quota_app)
 console = Console()
 
 
-def _build_runner_and_repos(
+def _build_container_and_repos(
     session: AsyncSession,
-) -> tuple[PipelineRunner, ExecutionRepository, FocusRepository]:
-    """Helper to build repositories and pipeline runner on an active managed session."""
+) -> tuple[Container, ExecutionRepository, FocusRepository]:
+    """Build the container and the repositories a command needs on an active session.
+
+    The pipeline runner is not built here: most commands only read state, and
+    constructing the runner would demand provider credentials they never use.
+    """
     container = Container(session)
-    return container.get_pipeline_runner(), container.execution_repo, container.focus_repo
+    return (
+        container,
+        container.require_execution_repo(),
+        container.require_focus_repo(),
+    )
 
 
 @asynccontextmanager
 async def _managed_cli_context() -> AsyncGenerator[
-    tuple[PipelineRunner, ExecutionRepository, FocusRepository]
+    tuple[Container, ExecutionRepository, FocusRepository]
 ]:
     """Manage lifecycle of database session and engine cleanly within async CLI commands."""
 
@@ -68,7 +75,7 @@ async def _managed_cli_context() -> AsyncGenerator[
     session_manager = get_session_manager()
     try:
         async with session_manager.session() as session:
-            yield _build_runner_and_repos(session)
+            yield _build_container_and_repos(session)
     finally:
         await session_manager.close()
         reset_session_manager()
@@ -89,7 +96,8 @@ def create_run_cmd(
     """Create a new pipeline Run and trigger execution."""
 
     async def _run() -> None:
-        async with _managed_cli_context() as (runner, exec_repo, focus_repo):
+        async with _managed_cli_context() as (container, exec_repo, focus_repo):
+            runner = container.get_pipeline_runner()
             queue_broker = Container().queue_broker
             use_case = CreateRunUseCase(exec_repo, focus_repo, queue_broker)
 
@@ -127,7 +135,7 @@ def get_run_status_cmd(
     """Inspect current status, steps, and gates of a Run."""
 
     async def _run() -> None:
-        async with _managed_cli_context() as (_, exec_repo, _):
+        async with _managed_cli_context() as (_container, exec_repo, _):
             use_case = GetRunStatusUseCase(exec_repo)
             run = await use_case.execute(run_id)
 
@@ -171,7 +179,7 @@ def list_runs_cmd(
     """List recent pipeline Runs."""
 
     async def _run() -> None:
-        async with _managed_cli_context() as (_, exec_repo, _):
+        async with _managed_cli_context() as (_container, exec_repo, _):
             use_case = ListRunsUseCase(exec_repo)
             runs = await use_case.execute(limit=limit)
 
@@ -208,7 +216,7 @@ def list_gates_cmd() -> None:
     """List all pending Gates awaiting operator review."""
 
     async def _run() -> None:
-        async with _managed_cli_context() as (_, exec_repo, _):
+        async with _managed_cli_context() as (_container, exec_repo, _):
             use_case = ListGatesUseCase(exec_repo)
             gates = await use_case.execute(pending_only=True)
 
@@ -243,7 +251,8 @@ def approve_gate_cmd(
     """Approve a pending Gate and resume pipeline execution."""
 
     async def _run() -> None:
-        async with _managed_cli_context() as (runner, exec_repo, _):
+        async with _managed_cli_context() as (container, exec_repo, _):
+            runner = container.get_pipeline_runner()
             queue_broker = Container().queue_broker
             use_case = ApproveGateUseCase(exec_repo, queue_broker)
 
@@ -278,7 +287,8 @@ def reject_gate_cmd(
     """Reject a Gate with mandatory structured feedback (SPEC §7)."""
 
     async def _run() -> None:
-        async with _managed_cli_context() as (runner, exec_repo, _):
+        async with _managed_cli_context() as (container, exec_repo, _):
+            runner = container.get_pipeline_runner()
             queue_broker = Container().queue_broker
             use_case = RejectGateUseCase(exec_repo, queue_broker)
 
@@ -316,7 +326,7 @@ def quota_status_cmd() -> None:
     """Inspect current quota availability across providers."""
 
     async def _run() -> None:
-        async with _managed_cli_context() as (_, exec_repo, _):
+        async with _managed_cli_context() as (_container, exec_repo, _):
             use_case = GetQuotaStatusUseCase(exec_repo)
             status_data = await use_case.execute()
 
