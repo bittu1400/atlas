@@ -4,22 +4,28 @@ This file tells you **how to work in this repository**. It is not the product vi
 
 | Document | What it is | Authority |
 |---|---|---|
-| `docs/STATUS.md` | **Read first.** Current phase, verified environment, what is done vs merely decided | Authoritative for state |
-| `docs/AUDIT-2026-08-29.md` | **Read second.** The Phase 7 fabrication incident, full defect register, and the remediation TODO list | Authoritative for what is actually broken |
+| `docs/STATUS.md` | **Read first.** Current phase, measured baseline, what exists vs what does not, and the session close-out checklist | Authoritative for state |
+| `docs/AUDIT-2026-08-29.md` | **Read second** — §13 (what the 2026-08-31 verification found), then §14 (live task register, ordered work list, start-up commands, what not to do). The Phase 7 fabrication incident and the full defect register are in §1–§12 | Authoritative for what is actually broken |
+| `docs/archive/` | Superseded documents kept as evidence under rule R11. **Nothing in here is a current claim** | Historical record only |
 | `prompt.md` | The founder's original vision statement | Immutable. Never edit. Cite it, don't rewrite it. |
 | `docs/SPEC.md` | Product truth — what Atlas does and what "correct" means | Authoritative for behaviour |
 | `docs/ARCHITECTURE.md` | System structure, layering, module map | Authoritative for structure |
-| `docs/adr/` | Why each major decision was made | Authoritative for rationale |
+| `docs/adr/` | Why each major decision was made (0001–0016; 0010 is void, see 0011) | Authoritative for rationale |
 | `docs/GLOSSARY.md` | Ubiquitous language | Authoritative for naming |
-| `docs/DECISIONS.md` | Log of settled choices (D1–D60) | Record; supersede via ADR only |
+| `docs/DECISIONS.md` | Log of settled choices (D1–D106) | Record; supersede via ADR only |
 | `CLAUDE.md` | How to work here | This file |
 
-**Read order before any non-trivial change:** `docs/STATUS.md` → `docs/AUDIT-2026-08-29.md` → `docs/SPEC.md` → relevant ADR → the code.
+**Read order before any non-trivial change:** `docs/STATUS.md` → `docs/AUDIT-2026-08-29.md` §13 and
+§14 → `docs/SPEC.md` §17 → `docs/ARCHITECTURE.md` §11 → the relevant ADR → the code.
 
 `docs/STATUS.md` comes first because every other document describes what Atlas *will* be. Only STATUS
-tells you what exists right now, and it is the one file to update at the end of a working session.
-As of 2026-08-29 STATUS is known to overstate what works — read `docs/AUDIT-2026-08-29.md` alongside
-it, and trust the audit where the two disagree.
+tells you what exists right now, and it is the one file to update at the end of a working session —
+its §5 carries the close-out checklist.
+
+**As of 2026-08-31, STATUS is rewritten from measurement and the three registers agree with the
+code:** `STATUS.md` (what exists), `SPEC.md` §17 (behaviour divergences), `ARCHITECTURE.md` §11
+(structure divergences). Where any two disagree, the audit wins and the disagreement is itself a
+finding — write it down before doing anything else.
 
 ---
 
@@ -146,7 +152,9 @@ Populated as the toolchain lands. Do not invent commands that are not listed her
 
 ```bash
 # Package management & dependencies
-uv sync --all-extras
+uv sync --all-extras          # --all-extras is required: the dev extra carries ruff, mypy,
+                              # pytest and pre-commit. Plain `uv sync` installs none of them,
+                              # which is how CI failed silently for two sessions.
 
 # Linting & Formatting
 uv run ruff check .
@@ -158,10 +166,23 @@ uv run mypy .
 # Test suite (unit, integration)
 uv run pytest
 
-# Database migrations (Alembic)
+# Database migrations (Alembic) — for the application database only.
+# The test suite runs its own upgrade/downgrade around the session; do not run these for tests.
 uv run alembic upgrade head
 uv run alembic downgrade base
+
+# The commit hook (ruff check, ruff format --check, the anti-fabrication guard)
+uv run pre-commit run --all-files
 ```
+
+**Databases.** The suite connects to `postgresql+asyncpg://postgres@localhost:5432/atlas_test`
+(override with `ATLAS_TEST_DATABASE_URL`) and applies migrations itself. `docker-compose.yml`'s
+`postgres` service is the *application* database — different user and database (`atlas` /
+`atlas_db`) — and binds the same host port, so the two cannot run at once.
+
+**Credentials.** `Container` raises `MissingProviderCredentialError` naming the variable when
+`GEMINI_API_KEY` or `FREESOUND_API_KEY` is missing. It raises at first *use* of the adapter, not at
+construction, so read-only commands such as `atlas quota status` run without any keys.
 
 ---
 

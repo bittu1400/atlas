@@ -104,6 +104,19 @@ that license it. The atom of the no-narration format.
 duration, cut points, beat-to-music alignment. The single artifact that text animation, sound effects,
 cuts, and captions all read from, guaranteeing they cannot drift apart.
 
+**Story Angle** — The narrative framing chosen for one Script, selected at pipeline stage 8 from the
+verified Claims of the Knowledge Object and stored on the Script. One Knowledge Object supports many
+angles; `branch` rejection means "same knowledge, different angle".
+
+**Caption Cue** — One `(start, end, text)` triple in a Timing Plan, exported as WebVTT. Cues are
+computed from Beats, never authored separately, so captions cannot drift from the on-screen text.
+
+**Sound Track** — The audio composition plan for one Storyboard: a music bed at a ducking level, an
+ordered list of **SFX Cues**, and a loudness target. Aligned to the Timing Plan, like everything else.
+
+**SFX Cue** — One sound effect placed at a timestamp with a volume and a cue type (`keystroke`,
+`transition`, `ambient`).
+
 **Storyboard** — The pairing of Beats to visual **Scenes**.
 
 **Scene** — One visual unit: an Asset plus its motion treatment (pan, scale, grade) and duration.
@@ -151,6 +164,16 @@ feedback that regeneration consumes.
 **Resource Lock** — Named concurrency lease with expiring TTL (e.g. GPU lease) to coordinate exclusive resource access across workers.
 
 **Idempotency Key** — Unique composite execution key (`run_id:step_name:input_hash`) preventing duplicate side-effects.
+
+**Step Output Reference** — The `steps.output_artifact_ref` value a Step writes when it succeeds: the
+ID of the artifact it produced, or a short marker for stages that produce none. It is how a later
+stage finds what an earlier one made, and it survives suspension and resumption because it is a
+database column. Stages read it rather than regenerating (ADR-0016).
+
+**Model Call** — One row in `model_calls`: the provider, model ID, prompt version, parameters, token
+counts, latency and outcome of a single invocation. Its provider and model are taken from the
+adapter that actually executed, never from the routing table, so provenance cannot disagree with
+reality. Distinct from the **Quota Ledger**, which aggregates consumption per provider per window.
 
 **Verbatim Evidence Check** — The rule, enforced in `ExtractionAgent`, that an Evidence quote is
 persisted only if it occurs as a substring of the decoded Snapshot bytes (whitespace normalised).
@@ -219,9 +242,13 @@ a conversion of the other.
 
 ## Providers
 
-**Provider** — An external capability behind an interface: `Llm`, `Embedder`, `Search`, `SourceFetcher`,
-`ImageGenerator`, `ImageSearch`, `Renderer`, `Storage`, `Publisher`, `Notifier`, `Speech` *(seam defined,
-unimplemented)*.
+**Provider** — An external capability behind an interface: `Llm`, `StructuredLlm`, `Embedder`,
+`Search`, `SourceFetcher`, `ImageSearch`, `ImageGenerator`, `SoundLibrary`, `Renderer`, `Storage`,
+`Publisher`, `Notifier`, `QueueBroker`, and `Speech` *(seam defined, unimplemented)*. All fourteen
+live in `application/ports/`; `repositories.py` holds the persistence ports, which are not Providers.
+
+**Queue Broker** — The port that enqueues a Run for background execution. Postgres is the queue
+(ADR-0001); `DramatiqQueueBroker` is the production adapter.
 
 **Adapter** — One concrete implementation of a Provider interface. The only place a vendor SDK appears.
 
@@ -230,8 +257,8 @@ on the GPU, **Tier 2** hosted free-tier models. Routing policy assigns each task
 
 **Routing Policy** — Configuration mapping task kinds to a Tier, a model, and a fallback chain.
 
-**Quota Ledger** — The append-only record of every model call: provider, model, tokens, latency, cost,
-outcome. Both the budget enforcer and the source of the Agent Monitor's data.
+**Quota Ledger** — The append-only record of consumption per provider per window (minute and day),
+with the Run that consumed it. The budget enforcer. Per-invocation detail lives in **Model Call**.
 
 **Prompt Version** — The immutable identifier of a prompt template. Part of the cache key and of every
 artifact's provenance.

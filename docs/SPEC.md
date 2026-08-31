@@ -135,27 +135,47 @@ Failure mode that must be handled, not hidden: a Focus too narrow to yield candi
 
 ## 6. Pipeline
 
-Gate policy shown is the Phase 1 default for ORIGINS.
+**Eighteen stages.** Gate policy shown is the Phase 1 default for ORIGINS and is the literal content
+of `DEFAULT_STAGE_GATES` in `application/policies/gate_policy.py`; the order is the literal content of
+`STAGE_SEQUENCE` in `application/pipeline/runner.py`. **Updated 2026-08-31 (T-39, D101):** this table
+previously listed 17 stages and disagreed with the code, which splits "Script" into generation and
+approval. The code's split is the better shape and is adopted here.
 
-| # | Stage | Produces | Gate |
-|---|---|---|---|
-| 1 | Idea Discovery | Candidate Topics within Focus | automatic |
-| 2 | Topic selection | An approved Topic | **manual** |
-| 3 | Research | Sources + Snapshots (Tier 0 only, no model calls) | automatic |
-| 4 | Claim extraction | Claims with Evidence locators | automatic |
-| 5 | Fact verification | Verification verdicts, contradictions surfaced | hybrid — manual on `contested` |
-| 6 | Knowledge Object | A versioned KO | **manual** |
-| 7 | Story angle | Ranked angles, one selected | hybrid — Atlas proposes, operator picks |
-| 8 | Script | Beats, each carrying Claim IDs | **manual** |
-| 9 | Timing Plan | Fitted schedule for the target duration | automatic |
-| 10 | Asset discovery | Candidate archival stills, license-resolved | automatic |
-| 11 | Asset selection | Chosen Assets | **manual** — always manual for AI-generated |
-| 12 | Storyboard | Beat-to-Scene pairing with motion treatment | automatic |
-| 13 | Sound design | SFX and music layers aligned to the Timing Plan | automatic |
-| 14 | Render | One Render per Render Target | automatic |
-| 15 | Quality check | Quality Report | automatic, **hard gate** |
-| 16 | Final approval | Publishable artifact | **manual** |
-| 17 | Publish | *Phase 1: manual export. Interface stubbed.* | — |
+| # | `PipelineStage` | Produces | Gate | Suspends? |
+|---|---|---|---|---|
+| 1 | `IDEA_DISCOVERY` | Candidate Topics within Focus | automatic | no |
+| 2 | `TOPIC_SELECTION` | An approved Topic | **manual** | always |
+| 3 | `RESEARCH` | Sources + Snapshots (Tier 0 only, no model calls) | automatic | no |
+| 4 | `CLAIM_EXTRACTION` | Claims (`unverified`) with verbatim Evidence, Knowledge Object v1 | automatic | no |
+| 5 | `FACT_VERIFICATION` | Verification verdicts, contradictions surfaced | hybrid | only when a Claim is `contested` |
+| 6 | `KNOWLEDGE_OBJECT` | A versioned KO the operator has seen | **manual** | always |
+| 7 | `STORY_ANGLE` | Operator consent to proceed to scripting | hybrid | always |
+| 8 | `SCRIPT_GENERATION` | The selected Story Angle, the Script, and its Timing Plan — **persisted** | automatic | no |
+| 9 | `SCRIPT_APPROVAL` | Operator approval of that Script | **manual** | always |
+| 10 | `TIMING_PLAN` | Validation and publication of the persisted Timing Plan's ID | automatic | no |
+| 11 | `ASSET_DISCOVERY` | Candidate archival stills, license-resolved | automatic | no |
+| 12 | `ASSET_SELECTION` | Chosen Assets | **manual** — always manual for AI-generated | always |
+| 13 | `STORYBOARD_CUTS` | Beat-to-Scene pairing with motion treatment — **persisted** | automatic | no |
+| 14 | `SOUND_DESIGN` | SFX and music layers aligned to the Timing Plan | automatic | no |
+| 15 | `REMOTION_RENDER` | One Render Artifact per Render Target — **persisted** | automatic | no |
+| 16 | `QUALITY_CHECK` | Quality Report | automatic, **hard gate** | no |
+| 17 | `FINAL_APPROVAL` | Publishable artifact | **manual** | always |
+| 18 | `PUBLISH` | External publication IDs | automatic | no |
+
+**Where the Story Angle is actually chosen.** Stage 7 is a gate, and a suspending stage runs no
+handler — so the operator's decision at stage 7 is "proceed to scripting", not "approve this angle".
+The angle itself is selected at stage 8 by `ScriptAgent.select_story_angle` from the verified Claims,
+and stored on the Script. Making stage 7 approve a *named* angle requires a change to gate mechanics
+and is deliberately not done (**D92**). Recorded here so the table is not read as more than it is.
+
+**Stage 15 is named `REMOTION_RENDER` while the renderer is a stub.** The stage name describes the
+intended implementation and appears in `steps.step_name` rows already written, so renaming it is a
+data migration for no behavioural gain. The *adapter* is honestly named `StubRenderer` (rule R3,
+**D96**), and `docs/STATUS.md` §3 says rendering does not exist.
+
+**Stage hand-off.** Every stage writes what it produced into `steps.output_artifact_ref`, and later
+stages read it. No stage regenerates an artifact an earlier stage already made — that was defect
+R-02 and is now structurally prevented by **ADR-0016**.
 
 A Run suspended at a gate persists indefinitely and resumes exactly where it stopped. Suspension is a
 row in a table, not a held process.
@@ -444,60 +464,73 @@ T-45, T-51, T-52) removed fabricated fixture text, added the anti-fabrication gu
 Knowledge Object assembly refuse untraceable Claims — all of which move the code **towards** §1–16,
 not away from it, and none of which touches a divergence recorded here.
 
-**Re-verified 2026-08-31** (independent verification session, audit §13): §17.2's stage 11 row
-(SC-03) is **closed** — see the row itself. §17.5's duration bound (R-04) is unchanged and still
-open.
+**Re-verified 2026-08-31** (independent verification session, audit §13), against commit `714cade`
+and the documentation pass that followed it, on a clean tree. **§17.1 is closed** (T-39: §6 adopts the 18-stage split). **§17.2 is closed in
+full.** **§17.3 and §17.4 are partially closed.** **§17.5's duration bound (R-04) is narrowed but
+still open.** Each row below says which side changed.
 
-### 17.1 Pipeline stage count and numbering (§6)
+### 17.1 Pipeline stage count and numbering (§6) — **CLOSED 2026-08-31 (T-39, D101)**
 
-§6 lists **17** stages. `STAGE_SEQUENCE` in `application/pipeline/runner.py` has **18**: the code
-splits spec stage 8 ("Script", manual) into two — `SCRIPT_GENERATION` (automatic) and
-`SCRIPT_APPROVAL` (manual). That split is reasonable and the spec should probably adopt it, but
-until it does, the two documents disagree and a third (`docs/phase-7-execution.md`, now retracted)
-said 17 while `docs/STATUS.md` said 18.
-
-**Action:** decide whether §6 adopts the 18-stage split, then make all three agree.
+§6 listed 17 stages; `STAGE_SEQUENCE` has 18, splitting "Script" into `SCRIPT_GENERATION`
+(automatic) and `SCRIPT_APPROVAL` (manual). **The doc changed:** §6 now transcribes
+`STAGE_SEQUENCE` and `DEFAULT_STAGE_GATES` directly, eighteen rows, with the gate and the
+suspend-or-not behaviour of each. `docs/STATUS.md` also says 18. All three agree.
 
 ### 17.2 Gate policy (§6)
 
 **Updated 2026-08-29 (Stage C review, D71).** The stage 5 and stage 7 rows were **deleted**: after
 T-37, `DEFAULT_STAGE_GATES` sets both to `HYBRID`, the runner passes `has_contested_claims` and
 `has_ai_generated_assets`, and no branch in `gate_policy.py` is unreachable. Per **D55** a row is
-deleted only when the code matches the doc. The stage 11 row is rewritten, not deleted — it now
-diverges in a different way.
+deleted only when the code matches the doc.
+
+**Updated 2026-08-31.** The stage 12 row is **closed**; the publish row is **partially closed** and
+renumbered to 18 to match §6. The section is kept as the record of what was wrong and which side
+moved.
 
 | Spec stage | Spec gate | `DEFAULT_STAGE_GATES` in code | Divergence |
 |---|---|---|---|
 | 11 · Asset selection | **manual**, always manual for AI-generated | `MANUAL`, forced `MANUAL` when an AI asset is present | **Closed 2026-08-31 (defects SC-03, B1).** The check runs at `STORYBOARD_CUTS` and resolves the asset-selection gate by its deterministic step ID, then requires an `Approval` row with `decision == approved` — `ExecutionRepository.list_approvals_for_run` was added for it. A gate row flipped to `approved` with no Approval is not approval. Both directions are tested: an unapproved AI asset fails the run, an approved one renders. |
-| 17 · Publish | "Phase 1: manual export. Interface stubbed." | `AUTOMATIC` | The stage returns a string and never calls the publisher (defect R-03). "Stubbed" is accurate; "records that it did not publish" is not implemented. |
+| 18 · Publish | "Phase 1: manual export. Interface stubbed." | `AUTOMATIC` | **Partially closed 2026-08-31 (defect R-03). Code changed:** the stage now loads the persisted Render Artifacts and calls `Publisher.publish` once per artifact, recording the returned IDs in `steps.output_artifact_ref`; with no publisher wired it raises `PublisherNotConfiguredError` rather than returning success. **Still open:** the publisher is `StubPublisher`, so a completed Run has published nothing real — it returns `stub:<artifact-id>` — and the stage does not consult `PublishScheduler` or the blackout rule. T-21's remaining bar is that a stub publisher must fail the stage loudly; see **D102** for why that was not done in the same change. |
 
 
 
-### 17.3 Approval semantics (§7)
+### 17.3 Approval semantics (§7) — partially closed 2026-08-31
 
 > "Approval records the actor, the timestamp, and the artifact version approved."
 
-The `approvals` table records `actor_id` and `created_at`. It records **no artifact version**, and
-neither does `gates` (defect R-10). An approval therefore cannot identify what was approved — and
-because the script is regenerated at five separate stages (defect R-02), the artifact a human
-approved is provably not the artifact that proceeds.
+The `approvals` table records `actor_id` and `created_at`. It still records **no artifact version**,
+and neither does `gates` (defect R-10, task **T-25**). **Open.**
+
+**The second half of this row is closed. Code changed:** the script is no longer regenerated at five
+stages (defect R-02, ADR-0016), so the artifact a human approved *is* the artifact that proceeds. It
+is now derivable — a gate names a `step_id`, and the `SCRIPT_GENERATION` step for the same Run names
+the Script ID — but derivable is not recorded, and a stale approval after a rework is still not
+detectable. T-25 remains the fix.
 
 ### 17.4 Source policy (§9) and provider ladder (§11)
 
 - §11 / ADR-0004: "Retrieval never consumes Tier 2. A fact absent from Tier 0 is not obtained by
   asking a model." Honoured in the routing table. **Violated in practice on 2026-08-29** by the
   hardcoded-payload incident, where facts came from neither Tier 0 nor a model.
-- The production container wires `FakeSearch` and `FakeSourceFetcher` for Tier 0 retrieval
-  (defect C-01). Real `WikipediaSearch` and `HttpSourceFetcher` exist and are unwired (C-02).
+- ~~The production container wires `FakeSearch` and `FakeSourceFetcher` for Tier 0 retrieval
+  (defect C-01). Real `WikipediaSearch` and `HttpSourceFetcher` exist and are unwired (C-02).~~
+  **Closed 2026-08-31 (D97). Code changed:** the container wires `WikipediaSearch` and
+  `HttpSourceFetcher`, and imports nothing from `adapters/fakes/`. **Caveat, stated plainly:** the
+  wiring is verified by a guard test, not by a network run. No Run has yet fetched a real URL, so
+  T-26's "a snapshot whose bytes came off the network" is **not** demonstrated — that is **T-34**.
 - Tier assignments in §11 are amended by **ADR-0012** (Tier 1 becomes primary; Tier 2 reserved for
   fact verification) after measurement showed the Gemini free tier allows 20 requests/day.
 
 ### 17.5 Quality (§8)
 
-- §8.3 deterministic checks: the duration bound (58–62 s) is satisfied trivially because
-  `TimingPlan.total_duration_seconds` **defaults to `60.0`** and is never computed from beats
-  (defect R-04, `domain/script/models.py:90`). A plan holding 3.5 seconds of beats reports 60.0 and
-  passes.
+- §8.3 deterministic checks: **narrowed 2026-08-31, still open (defect R-04, task T-20).** The
+  pipeline's own plans are now honest — `ScriptAgent._compute_timing_plan` sets
+  `total_duration_seconds` from the summed beat durations, and the persisted plan is what the judge
+  reads (ADR-0016), so a pipeline-produced plan can no longer lie. **What remains:**
+  `TimingPlan.total_duration_seconds` still carries `default=60.0` in
+  `domain/script/models.py`, so any plan constructed without that field — a fixture, a future
+  caller, a repair path — reports 60.0 regardless of its beats and passes the 58–62 s check. The
+  default must go and the value must be derived or validated at construction.
 - §8.1 rubric: eight dimensions, implemented and enforced by Pydantic. Correct.
 - §8.4 calibration and the golden set do not exist. This blocks ADR-0012's quality measurement.
 
@@ -523,6 +556,13 @@ spec's Phase 6 (knowledge system: novelty detection, entity binding, claim impac
 mapping the old STATUS phase names onto these phases so the Phase-6 adapter work is recounted rather
 than lost. Audit tasks **T-38** (reconcile) then **T-31** (rewrite STATUS), in that order.
 
+**Done 2026-08-31 (T-38, T-31).** `docs/STATUS.md` was rewritten from measurement and uses this
+section's numbering; its §2.1 carries the mapping table. The 2026-08-29 STATUS body is archived
+unchanged at `docs/archive/STATUS-2026-08-29.md` under rule R11. The table above stays as the record
+of the confusion, with one correction: SPEC's Phase 5 row said "two agents violate the invariants
+they enforce (D-02, D-04)" — both are closed (T-13, T-14), and the pipeline now runs all 18 stages
+against fakes. SPEC's Phase 6 and Phase 7 remain unbuilt.
+
 **Also decided (D57):** the real Remotion renderer is **deferred**. Phase 7 ends at a correct
 Knowledge Object, a verified Script and a real Storyboard. `RemotionRenderer` was renamed
 `StubRenderer` on 2026-08-31 (D96), and the data path into it is now fixed: the renderer receives
@@ -537,3 +577,14 @@ the persisted Storyboard and Timing Plan for the run (ADR-0016), so the real ren
 | Novelty threshold | Still open, and cannot be approached: novelty detection does not exist (§17.6). |
 | Quality threshold of 78 | Still open. Now blocking: **ADR-0012** requires the golden set to measure the Tier 1 quality drop. |
 | Backup and restore | Partially answered — `atlas backup` / `atlas restore` wrap `pg_dump` and `tar`. Untested against a real restore, and must now decide whether quarantine schemas travel with a backup (**ADR-0013**). |
+
+### 17.8 Divergences found on 2026-08-31
+
+New rows, opened by the verification session (audit §13). None is a correction to §1–16.
+
+| Spec section | Divergence | Task |
+|---|---|---|
+| §6 | Agents are called with `topic_title=run.topic_id` at four sites in `runner.py`. The `topics` row holds the real title and it is never read, so every prompt and search query sees an ID where a title belongs (defects R-06, R-07). | **T-22** |
+| §6 | The gate-stage branch of `PipelineRunner._dispatch_stage_handler` — the one returning `gate_passed_<stage>` for the six manual/hybrid stages — is **unreachable**. Those stages always suspend, and `_execute_stage` returns before dispatch in every path that follows. Harmless as a defensive fallback, but it is dead code that reads like behaviour. | **new, T-53** |
+| §7 | `PUBLISH` returns success while `StubPublisher` is wired. A Run can reach `completed` having published nothing. Stated in `docs/STATUS.md` §3, but it is the exact shape of "it ran is not it worked" (**R6**). | **T-21** |
+| §11 | `ImageCandidate` list at stage 13 is re-searched rather than loaded from stage 11, so the candidate set the operator approved at the stage 12 gate is not provably the set the Storyboard drew from. The Storyboard itself is persisted, so everything from stage 13 onward is stable. | **new, T-54** (ADR-0016 trade-offs) |

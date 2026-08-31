@@ -1,7 +1,27 @@
 # ADR 0009: Phase 6 Production Integration & Dependency Injection
 
-**Status:** Accepted
+**Status:** Accepted — **partially superseded, see the amendment below**
 **Date:** 2026-08-26
+**Amended:** 2026-08-31
+
+> **Amendment, 2026-08-31.** The container decision stands and is now actually true; three specific
+> claims in this ADR were false when written and are corrected here rather than silently edited.
+>
+> - **"The container wires up real adapters … `RemotionRenderer`"** — it also wired `FakeSearch`,
+>   `FakeSourceFetcher` and `FakeNotifier`, which is the opposite of this ADR's own "Zero Fakes in
+>   Production" driver (defects C-01, C-02). Closed 2026-08-31 (**D97**): the container imports
+>   nothing from `adapters/fakes/`; it wires `WikipediaSearch`, `HttpSourceFetcher` and a new
+>   `LoggingNotifier`. A guard test enforces it. **Caveat:** the wiring is proven by a guard, not by
+>   a network run — no Run has yet fetched a real URL (audit task T-34).
+> - **`RemotionRenderer` and `YouTubePublisher`** were stubs wearing real names. Renamed to
+>   `StubRenderer` and `StubPublisher` on 2026-08-31 (**D96**, rule R3); see the amendment on
+>   ADR-0005.
+> - **`LocalStableDiffusionGenerator`** never loaded a diffusers pipeline. Renamed
+>   `StubImageGenerator`. It is reachable from `Container` and called by nothing.
+> - **`ThumbnailGenerator`** was deleted — no caller anywhere.
+>
+> Five adapters this ADR delivered are still reachable from nothing: `AudioCompositor`,
+> `KeystrokeSampler`, `ImageDownloader`, `PublishScheduler`, `OllamaLlm`. Audit task **T-28**.
 
 ## Context and Problem Statement
 

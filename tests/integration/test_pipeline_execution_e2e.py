@@ -92,7 +92,7 @@ async def _seed_topic_and_channel(
 
 
 @pytest.mark.asyncio
-async def test_full_17_stage_pipeline_traversal_with_human_gates(
+async def test_full_18_stage_pipeline_traversal_with_human_gates(
     db_session: AsyncSession, test_storage: LocalStorage
 ) -> None:
     """Test full execution of all 17 pipeline stages with gate suspension, approval, and completion."""
