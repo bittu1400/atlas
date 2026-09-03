@@ -1,4 +1,4 @@
-"""Integration test verifying that Alembic migrations apply forward and backward cleanly."""
+import os
 
 from alembic import command
 from alembic.config import Config
@@ -6,10 +6,11 @@ from alembic.config import Config
 
 def test_alembic_migrations_roundtrip() -> None:
     """Verify migrations apply upgrade head, downgrade base, and upgrade head without errors."""
-    alembic_cfg = Config("alembic.ini")
-    alembic_cfg.set_main_option(
-        "sqlalchemy.url", "postgresql+psycopg://postgres@localhost:5432/atlas_test"
+    test_db_url = os.getenv(
+        "ATLAS_TEST_DATABASE_URL", "postgresql+asyncpg://postgres@localhost:5432/atlas_test"
     )
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("sqlalchemy.url", test_db_url.replace("+asyncpg", "+psycopg"))
 
     # 1. Downgrade to base
     command.downgrade(alembic_cfg, "base")
