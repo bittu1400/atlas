@@ -42,6 +42,13 @@ jobs:
     - name: Typecheck with mypy
       run: uv run mypy .
 
+    - name: Apply database migrations
+      env:
+        ATLAS_DATABASE_URL: postgresql+asyncpg://postgres:password@localhost:5432/atlas_test
+        ATLAS_TEST_DATABASE_URL: postgresql+asyncpg://postgres:password@localhost:5432/atlas_test
+        DATABASE_URL: postgresql://postgres:password@localhost:5432/atlas_test
+      run: uv run alembic upgrade head
+
     - name: Run pytest
       env:
         ATLAS_DATABASE_URL: postgresql+asyncpg://postgres:password@localhost:5432/atlas_test

@@ -42,7 +42,7 @@ def test_cli_quota_help() -> None:
     assert "status" in result.output
 
 
-def test_cli_quota_status() -> None:
+def test_cli_quota_status(db_session: object) -> None:  # noqa: ARG001
     """Verify `atlas quota status` execution."""
     result = runner.invoke(app, ["quota", "status"])
     assert result.exit_code == 0
