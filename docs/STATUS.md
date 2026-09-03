@@ -1,7 +1,6 @@
 # Status
 
-**Last updated:** 2026-08-31 (second independent verification session, then the documentation
-reconciliation that followed it — audit §15)
+**Last updated:** 2026-09-03 (operator interface browser testing T-55, CI configuration and unblocking)
 **Branch:** `docs/audit-2026-08-29` — see §1.
 
 This file separates **decided** from **done**. Everything else in `docs/` records what Atlas *will*
@@ -15,8 +14,8 @@ current claim.
 
 ## 0. Measured baseline
 
-Measured on 2026-08-31, in the session that wrote this section, after the V-01 – V-12 remediation and
-the documentation reconciliation that followed it. **Re-run them before quoting them** (**R7**).
+Measured on 2026-09-03, in the session that wrote this section, after the T-55 Playwright browser testing
+implementation and the CI workflow fixes. **Re-run them before quoting them** (**R7**).
 
 ```
 $ uv run ruff check .
@@ -26,12 +25,10 @@ $ uv run mypy .
 Success: no issues found in 160 source files
 
 $ uv run pytest --tb=short
-160 passed in 16.72s
+160 passed in 18.27s
 
-$ uv run pre-commit run --all-files
-Ruff Lint Check..........................................................Passed
-Ruff Format Check........................................................Passed
-Anti-Fabrication Structural Guard........................................Passed
+$ pnpm test
+4 passed in 2.3s (apps/web/e2e/dashboard.spec.ts, Playwright Chromium)
 
 $ pnpm -r build
 packages/tokens · apps/renderer · apps/web — 3 of 3 built
@@ -99,9 +96,11 @@ now reads the API: Runs, pending Gates, quota, and two endpoints added in this s
 (`/runs/{id}/knowledge`, `/runs/{id}/telemetry`). Every panel renders a database row or an error —
 until 2026-08-31 five of its components rendered invented claims, invented snapshot hashes and an
 invented telemetry feed, and its API client answered an unreachable backend with fabricated Runs and
-a fabricated passing quality report (defect **V-03**, audit §15.4). **No test drives the browser**;
-Guard 8 asserts the *sources* contain no fixture, not that the UI behaves. Treat its rendering as
-unverified.
+a fabricated passing quality report (defect **V-03**, audit §15.4). **Browser testing is real and verified
+via Playwright** (task **T-55**, **ADR-0018**): `apps/web/e2e/dashboard.spec.ts` executes in headless Chromium,
+asserting that the dashboard renders live API topic IDs, gate step IDs, error banners on failed actions,
+and real snapshot hashes without fixtures.
+
 
 **Phase 5 · Agents** — complete. Topic discovery, research, extraction, verification, story angle,
 script, storyboard, sound design and quality judge. An ORIGINS Topic yields a source-traced
@@ -200,8 +199,6 @@ a feature.
   is nothing to replay. `WikipediaSearch`, `HttpSourceFetcher`, `WikimediaCommonsSearch`,
   `InternetArchiveSearch`, `OllamaEmbedder`, `GeminiLlm` and `FreesoundLibrary` are verified only by
   hand.
-- **Any browser test.** The dashboard's sources are guarded against fixtures; nothing renders it and
-  asserts what appears. Playwright, jsdom and a component runner are all absent.
 - **The asset, script-beat and quality-rubric review panels.** They existed, drawn from a
   `gate.metadata` field the API does not return, and were deleted with the rest of **V-03**. Bringing
   them back means endpoints that return an approved Run's asset candidates, script beats and quality
@@ -280,15 +277,12 @@ then §14 and §13 for the two sessions before it → `docs/SPEC.md` §17 → `d
 (the HTTP surface — the contract the dashboard codes against) and §11 → the relevant ADR → the code.
 
 `docs/AUDIT-2026-08-29.md` is the authoritative register of what is broken. **§15.9 supersedes §14.2**
-as the ordered list. Its first four, in short:
+as the ordered list. Its first three, in short:
 
-1. **T-00 / T-11 — CI.** Cannot be closed by a session; the branch has never been pushed. Until it
-   is, every number in §0 above is one machine's word.
-2. **T-55 — a browser test for the dashboard.** Guard 8 proves the dashboard's *sources* hold no
-   fixture; nothing proves the *screen* renders what the API returned. That is the gap that let
-   **V-03** stand for a whole phase, and it is the most valuable missing test in the project.
-3. **T-22 — load the real topic title.** Four lines, immediate quality effect.
-4. **T-20 — remove `TimingPlan.total_duration_seconds`'s default.** A deterministic check a default
+1. **T-00 / T-11 — CI.** Pushing `docs/audit-2026-08-29` and opening a PR triggers CI with the database
+   and Playwright fixes.
+2. **T-22 — load the real topic title.** Four lines, immediate quality effect.
+3. **T-20 — remove `TimingPlan.total_duration_seconds`'s default.** A deterministic check a default
    can satisfy is not a check.
 
 **Do not start T-34** (the honest real-provider run) before **T-29**, **T-30** and now **T-58**. The

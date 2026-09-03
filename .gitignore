@@ -27,6 +27,9 @@ apps/renderer/out/
 # `apps/renderer` is consumed from source by the bundler, so its tsconfig sets
 # noEmit. This keeps a stray local `tsc` from re-littering src/ (defect V-09).
 apps/renderer/src/**/*.js
+test-results/
+playwright-report/
+
 
 # --- Generated media & local storage ----------------------------------------
 # Renders and downloaded assets are content-addressed and reproducible.
