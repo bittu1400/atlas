@@ -34,9 +34,9 @@ playwright-report/
 # --- Generated media & local storage ----------------------------------------
 # Renders and downloaded assets are content-addressed and reproducible.
 # They must never enter git history; they live behind the Storage interface.
-var/
-storage/
-out/
+/var/
+/storage/
+/out/
 *.mp4
 *.mov
 *.wav
