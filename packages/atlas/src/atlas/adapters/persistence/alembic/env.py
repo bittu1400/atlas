@@ -18,14 +18,17 @@ target_metadata = Base.metadata
 
 def get_url() -> str:
     """Get database sync url from settings or environment."""
-    # Tests inject sqlalchemy.url into the alembic config object directly
+    if env_url := os.getenv("ATLAS_DATABASE_SYNC_URL"):
+        return env_url
+    if test_url := os.getenv("ATLAS_TEST_DATABASE_URL"):
+        return test_url.replace("+asyncpg", "+psycopg")
+
     url_from_config = config.get_main_option("sqlalchemy.url")
-    if url_from_config:
+    if url_from_config and url_from_config != "postgresql+psycopg://postgres@localhost:5432/atlas":
         return url_from_config
 
     settings = get_settings()
-    env_url = os.getenv("ATLAS_DATABASE_SYNC_URL", settings.database_sync_url)
-    return env_url
+    return settings.database_sync_url
 
 
 def run_migrations_offline() -> None:
