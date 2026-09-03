@@ -48,7 +48,7 @@ atlas/
 ├── docs/
 │   ├── SPEC.md  ARCHITECTURE.md  GLOSSARY.md  DECISIONS.md  STATUS.md
 │   ├── AUDIT-2026-08-29.md       # defect register + task list — read after STATUS
-│   ├── adr/                      # 0001-0017 (0010 is void — see 0011)
+│   ├── adr/                      # 0001-0018 (0010 is void — see 0011)
 │   ├── archive/                  # superseded documents, retained as evidence (R11)
 │   └── diagrams/
 ├── apps/
@@ -382,12 +382,12 @@ statement of where this screen stands, and **T-59** is how it stops being true.
 | Cassettes | Real provider responses recorded once, replayed thereafter. Recording is manual and explicit. **Does not exist** — task **T-58**. |
 | Golden | The hand-scored quality set. Re-run on every prompt change to catch quality regressions. **Does not exist** — task **T-36**. |
 | Structural guards | Nine AST-and-text checks in `tests/unit/test_no_fabrication.py`, three of which also run in the commit hook. Guards 1–7 cover Python; **8 covers `apps/web/src` and `apps/renderer/src`**; 9 covers model metering. ADR-0014, ADR-0017. |
-| Browser | Asserts what the dashboard renders, as against what its sources contain. **Does not exist** — task **T-55**, and its absence is why defect V-03 stood for a phase. |
+| Browser | Real Chromium via Playwright (`apps/web/e2e/dashboard.spec.ts`). Asserts what the dashboard renders against API data and verifies negative defect sensitivity (T-55, ADR-0018, D127). |
 
 The fakes package is load-bearing infrastructure, not test scaffolding. If e2e tests need real providers,
 they will quietly stop being run, and the pipeline will rot.
 
-Two rows above are marked *does not exist*, and one consequence is worth stating rather than leaving
+Two rows above (Cassettes, Golden) are marked *does not exist*, and one consequence is worth stating rather than leaving
 to be inferred: **seven wired adapters reach the network and none of them has a test.**
 `WikipediaSearch`, `HttpSourceFetcher`, `WikimediaCommonsSearch`, `InternetArchiveSearch`,
 `OllamaEmbedder`, `GeminiLlm` and `FreesoundLibrary` are verified by hand and by nothing else, because
@@ -518,6 +518,14 @@ findings in `docs/AUDIT-2026-08-29.md` §15.
 | `apps/api/routes/events.py` | **Tree.** Deleted. The SSE route answered any run ID with two hardcoded messages and had no consumer. | V-12, D121 |
 | `ARCHITECTURE.md` §2.1 | **Document.** The HTTP surface had never been written down anywhere, which is why the dashboard coded against an API it invented. | V-03, D122 |
 
+### 11.7c Structure changed on 2026-09-03
+
+| Item | Which side changed | Note |
+|---|---|---|
+| `apps/web/e2e/dashboard.spec.ts` | **Tree.** Playwright browser test suite added; asserts what the dashboard renders against API data with negative sensitivity. | T-55, ADR-0018, D127 |
+| `.gitignore` | **Tree.** Anchored `/var/`, `/storage/`, `/out/` to root so `packages/atlas/src/atlas/adapters/storage/local.py` is tracked. | Resolves uncommitted storage adapter |
+| `PipelineRunner._resolve_topic_title` | **Tree.** Fetches `Topic` from `SourceRepository` and passes `topic.title` to agents and queries. | T-22, D128 |
+
 ### 11.8 Open structural items carried forward
 
 Everything above that is still open, in one list, so the next session does not have to re-derive it:
@@ -533,6 +541,5 @@ Everything above that is still open, in one list, so the next session does not h
 | No cassettes, no golden set | **T-36** | Blocks ADR-0012's quality measurement. |
 | Model IDs hardcoded | **T-29** | ADR-0012 records the decision; the implementation is unstarted. The Ollama base URL left this row on 2026-08-31 — it is `Settings.ollama_base_url` (**D116**). |
 | No YAML configuration surface | **T-29** | Same. |
-| No browser test for `apps/web` | new, 2026-08-31 | Guard 8 parses the dashboard's sources for fixtures; nothing renders it and asserts what appears. This is the gap that let defect **V-03** stand for a whole phase. |
 | No cassette for any network adapter | **T-36** | Seven wired adapters reach the network and none has a test, because a unit test may not and there is nothing to replay. `tests/integration/test_production_adapters.py` covers the six that do not. |
 | Gate review data has no endpoint | **D111** | The approval screen can show Gate rows and link to the Run's Knowledge Object and telemetry. Asset candidates, script beats and the quality report have no read model, so those panels were deleted rather than kept as fixtures. |

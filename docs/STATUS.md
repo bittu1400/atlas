@@ -1,6 +1,6 @@
 # Status
 
-**Last updated:** 2026-09-03 (operator interface browser testing T-55, CI configuration and unblocking)
+**Last updated:** 2026-09-03 (browser testing T-55, real topic title T-22, CI configuration and unblocking)
 **Branch:** `docs/audit-2026-08-29` — see §1.
 
 This file separates **decided** from **done**. Everything else in `docs/` records what Atlas *will*
@@ -15,7 +15,7 @@ current claim.
 ## 0. Measured baseline
 
 Measured on 2026-09-03, in the session that wrote this section, after the T-55 Playwright browser testing
-implementation and the CI workflow fixes. **Re-run them before quoting them** (**R7**).
+implementation, the T-22 topic title resolution, and the CI workflow fixes. **Re-run them before quoting them** (**R7**).
 
 ```
 $ uv run ruff check .
@@ -44,7 +44,7 @@ There are no `xfail` markers in the suite.
 
 **The three headline numbers held when this session re-measured the previous one's** — the count
 moved because two stale quota tests were deleted (**D120**), one test of a deleted endpoint went with
-it (**D121**), and thirty-nine were added. What did not hold was the claim those numbers were taken
+it (**D121**), thirty-nine were added, and three were added for T-22. What did not hold was the claim those numbers were taken
 to support. The suite exercises the pipeline **against fakes**; until this session no test
 constructed `Container` or called any adapter it wires except
 `LocalStorage`. The first production adapter substituted into a real Run — `LoggingNotifier` — raised
@@ -52,26 +52,26 @@ constructed `Container` or called any adapter it wires except
 thirteen defects, of which three were P0 and none had a task in the register before they were found.
 Twelve are fixed; **V-13** is open by decision (**D125**, task **T-60**).
 
-**CI has still never run a single check.** `gh run list` on 2026-08-31 shows two runs, both
-`failure`, both from 2026-08-26, both predating the `uv sync --all-extras` fix. `ci.yml` triggers
-only on push to `main` or a pull request into `main`, and the branch `docs/audit-2026-08-29` has
-never been pushed. Closing **T-00** and **T-11** needs an operator to push (D82). Every number above
-was produced locally and nothing has independently verified it.
+**CI status:** On 2026-09-03, branch `docs/audit-2026-08-29` was pushed to `origin` and PR #1 opened.
+CI triggered and verified lint (Ruff) and typecheck (Mypy) successfully. Pytest and Alembic migrations
+failed in the GitHub Actions runner due to container database authentication (`fe_sendauth: no password supplied`).
+Fixes were implemented and verified locally (`alembic/env.py`, job-level `ATLAS_DATABASE_SYNC_URL`, `ci.yml`,
+and `test_cli_quota_status`), but remote CI debugging was paused by operator decision to tackle other priorities.
+Closing **T-00** and **T-11** remains to be finalized in a future session.
 
 ---
 
 ## 1. Working tree state
 
-Clean on branch `docs/audit-2026-08-29`. The most recent behavioural commit is the V-01 – V-12
-remediation described in audit §15, followed by the documentation reconciliation that found **V-13**
-and deliberately left it to task **T-60** (**D125**). Before those, `714cade` carried the B1 – B9
-work.
+Clean on branch `docs/audit-2026-08-29`. The most recent behavioural commit is the T-22 topic title resolution,
+preceded by the T-55 Playwright browser test suite, the V-01 – V-12 remediation, and the documentation
+reconciliation that found **V-13** and deliberately left it to task **T-60** (**D125**).
 
 This file deliberately does not name its own HEAD. A document that states the hash of the commit
 containing it is wrong the moment it is committed. `git log --oneline -5` is the source of truth.
 
-**The branch has never been pushed**, and is several commits ahead of `main`. That is why CI has
-still never run a single check — see §0.
+**The branch is pushed to `origin/docs/audit-2026-08-29`** with PR #1 opened against `main`. Recent local
+commits (alembic env fix and T-22) are currently ahead of `origin`.
 
 ---
 
@@ -80,7 +80,7 @@ still never run a single check — see §0.
 Verified means: exercised by a test that inspects database state after a real run, not merely that a
 function exists.
 
-**Phase 1 · Architecture** — complete. Spec, architecture, glossary, ADRs 0001–0017.
+**Phase 1 · Architecture** — complete. Spec, architecture, glossary, ADRs 0001–0018.
 
 **Phase 2 · Database** — complete. 30 tables, 7 Alembic migrations, round-trip tested
 (`test_alembic_migrations_roundtrip` applies head → base → head). Knowledge Objects are
@@ -104,7 +104,11 @@ and real snapshot hashes without fixtures.
 
 **Phase 5 · Agents** — complete. Topic discovery, research, extraction, verification, story angle,
 script, storyboard, sound design and quality judge. An ORIGINS Topic yields a source-traced
-Knowledge Object and a Script whose every beat cites verified claims.
+Knowledge Object and a Script whose every beat cites verified claims. **Topic title resolution is
+honest (T-22, D128):** `PipelineRunner._resolve_topic_title` loads `topic.title` from `SourceRepository`
+and propagates it to `ResearchAgent`, `ExtractionAgent`, `ScriptAgent`, `JudgeAgent`, and archival search,
+eliminating the four sites where raw snake_case IDs were previously passed into prompts and queries.
+
 
 **The production wiring is exercised.** `tests/integration/test_production_adapters.py` constructs
 `Container`, asserts it resolves no port to a fake, and runs `StubRenderer` (both aspect ratios,
