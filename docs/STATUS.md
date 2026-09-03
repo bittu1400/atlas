@@ -22,13 +22,13 @@ $ uv run ruff check .
 All checks passed!
 
 $ uv run mypy .
-Success: no issues found in 160 source files
+Success: no issues found in 161 source files
 
 $ uv run pytest --tb=short
-160 passed in 18.27s
+163 passed in 23.42s
 
 $ pnpm test
-4 passed in 2.3s (apps/web/e2e/dashboard.spec.ts, Playwright Chromium)
+4 passed in 2.9s (apps/web/e2e/dashboard.spec.ts, Playwright Chromium)
 
 $ pnpm -r build
 packages/tokens · apps/renderer · apps/web — 3 of 3 built
@@ -281,9 +281,9 @@ as the ordered list. Its first three, in short:
 
 1. **T-00 / T-11 — CI.** Pushing `docs/audit-2026-08-29` and opening a PR triggers CI with the database
    and Playwright fixes.
-2. **T-22 — load the real topic title.** Four lines, immediate quality effect.
-3. **T-20 — remove `TimingPlan.total_duration_seconds`'s default.** A deterministic check a default
+2. **T-20 — remove `TimingPlan.total_duration_seconds`'s default.** A deterministic check a default
    can satisfy is not a check.
+3. **T-53 — the unreachable gate-stage branch.** Decide and document.
 
 **Do not start T-34** (the honest real-provider run) before **T-29**, **T-30** and now **T-58**. The
 Gemini free tier allows 20 requests a day and a correct run needs 6–9; that scarcity is the direct

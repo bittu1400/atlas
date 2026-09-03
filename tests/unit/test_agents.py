@@ -36,6 +36,7 @@ class InMemorySourceRepository(SourceRepositoryPort):
     """In-memory source repository for hermetic unit testing."""
 
     def __init__(self) -> None:
+        self.topics: dict[str, Topic] = {}
         self.sources: dict[str, Source] = {}
         self.snapshots: dict[str, Snapshot] = {}
         self.evidence: dict[str, Evidence] = {}
@@ -45,10 +46,11 @@ class InMemorySourceRepository(SourceRepositoryPort):
         self.links: list[ClaimEvidenceLink] = []
 
     async def save_topic(self, topic: Topic) -> Topic:
+        self.topics[topic.id] = topic
         return topic
 
-    async def get_topic(self, _topic_id: str) -> Topic | None:
-        return None
+    async def get_topic(self, topic_id: str) -> Topic | None:
+        return self.topics.get(topic_id)
 
     async def save_source(self, source: Source) -> Source:
         self.sources[source.id] = source

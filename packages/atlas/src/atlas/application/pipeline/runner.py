@@ -442,9 +442,17 @@ class PipelineRunner:
         if offenders:
             raise UnapprovedScriptError(script.id, sorted(offenders))
 
+    async def _resolve_topic_title(self, topic_id: str) -> str:
+        """Fetch the Topic row and return its human-readable title, falling back to topic_id."""
+        topic = await self.source_repo.get_topic(topic_id)
+        if topic is not None and topic.title:
+            return topic.title
+        return topic_id
+
     async def _dispatch_stage_handler(self, run: Run, stage: PipelineStage, step: Step) -> str:
         """Execute domain logic for a specific automated stage."""
         logger.info("stage.executing", stage=stage.value, run_id=run.id)
+        topic_title = await self._resolve_topic_title(run.topic_id)
 
         if stage == PipelineStage.IDEA_DISCOVERY:
             ideas = await self.topic_agent.execute(
@@ -456,7 +464,7 @@ class PipelineRunner:
             # Fetch Tier 0 primary sources and snapshot content via ResearchAgent
             result = await self.research_agent.execute(
                 topic_id=run.topic_id,
-                search_query=f"{run.topic_id} primary history archive",
+                search_query=f"{topic_title} primary history archive",
                 limit=1,
             )
             if not result.snapshots_created:
@@ -469,7 +477,7 @@ class PipelineRunner:
             snapshot_id = await self._stage_output(run.id, PipelineStage.RESEARCH)
             extract_result = await self.extraction_agent.execute(
                 topic_id=run.topic_id,
-                topic_title=run.topic_id,
+                topic_title=topic_title,
                 snapshot_id=snapshot_id,
                 run_id=run.id,
                 step_id=step.id,
@@ -512,13 +520,13 @@ class PipelineRunner:
             ko_id = knowledge_object_id_for_topic(run.topic_id)
             story_angle = await self.script_agent.select_story_angle(
                 ko_id=ko_id,
-                topic_title=run.topic_id,
+                topic_title=topic_title,
                 run_id=run.id,
                 step_id=step.id,
             )
             script_res = await self.script_agent.generate_script(
                 ko_id=ko_id,
-                topic_title=run.topic_id,
+                topic_title=topic_title,
                 story_angle=story_angle,
                 run_id=run.id,
                 step_id=step.id,
@@ -534,7 +542,7 @@ class PipelineRunner:
             return timing_plan.id
 
         elif stage == PipelineStage.ASSET_DISCOVERY:
-            candidates = await self.image_search.search_archival(run.topic_id, limit=10)
+            candidates = await self.image_search.search_archival(topic_title, limit=10)
             has_ai = False
             for c in candidates:
                 LicensePolicy.validate_asset_license(c.id, c.license_id)
@@ -545,7 +553,7 @@ class PipelineRunner:
         elif stage == PipelineStage.STORYBOARD_CUTS:
             script, timing_plan = await self._load_script_and_timing(run.id)
             candidates = await self.image_search.search_archival(
-                run.topic_id, limit=max(5, len(script.beats))
+                topic_title, limit=max(5, len(script.beats))
             )
             if not candidates:
                 raise ProductionArtifactNotFoundError("Archival assets for topic", run.topic_id)
@@ -600,7 +608,7 @@ class PipelineRunner:
                 run_id=run.id,
                 script=script,
                 timing_plan=timing_plan,
-                topic_title=run.topic_id,
+                topic_title=topic_title,
                 step_id=step.id,
             )
             if not eval_result.passed:
