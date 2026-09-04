@@ -247,7 +247,6 @@ class ScriptAgent:
         return TimingPlan(
             id=generate_id("tmp"),
             script_id=script.id,
-            total_duration_seconds=round(current_offset, 2),
             beat_timings=beat_timings,
             caption_cues=caption_cues,
             metadata={"words_total": script.total_words, "beats_count": len(script.beats)},

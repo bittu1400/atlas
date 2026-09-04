@@ -36,7 +36,6 @@ def _timing_plan() -> TimingPlan:
     return TimingPlan(
         id="tp_adapter_probe",
         script_id="scr_adapter_probe",
-        total_duration_seconds=4.0,
         beat_timings=[
             BeatTiming(
                 beat_id="beat_01",

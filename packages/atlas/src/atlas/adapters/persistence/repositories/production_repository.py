@@ -99,7 +99,6 @@ class ProductionRepository:
         return TimingPlan(
             id=row.id,
             script_id=row.script_id,
-            total_duration_seconds=row.total_duration_seconds,
             beat_timings=[BeatTiming.model_validate(t) for t in row.beat_timings],
             caption_cues=[CaptionCue.model_validate(c) for c in row.caption_cues],
             metadata=dict(row.meta or {}),
