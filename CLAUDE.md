@@ -5,7 +5,7 @@ This file tells you **how to work in this repository**. It is not the product vi
 | Document | What it is | Authority |
 |---|---|---|
 | `docs/STATUS.md` | **Read first.** Current phase, measured baseline, what exists vs what does not, and the session close-out checklist | Authoritative for state |
-| `docs/AUDIT-2026-08-29.md` | **Read second** — §15 (what the second 2026-08-31 verification found, defects V-01–V-11; §15.8 is what not to do), then §14 (live task register, ordered work list, start-up commands) and §13 for the session before it. The Phase 7 fabrication incident and the full defect register are in §1–§12 | Authoritative for what is actually broken |
+| `docs/AUDIT-2026-08-29.md` | **Read second** — §16 (the 2026-09-04 session: CI closed, T-20 closed, defect **V-14** found), then §15 (the second 2026-08-31 verification, defects V-01–V-13; **§15.9 is the live ordered task list**, §15.8 is what not to do), then §14 and §13. The Phase 7 fabrication incident and the full defect register are in §1–§12 | Authoritative for what is actually broken |
 | `docs/archive/` | Superseded documents kept as evidence under rule R11. **Nothing in here is a current claim** | Historical record only |
 | `prompt.md` | The founder's original vision statement | Immutable. Never edit. Cite it, don't rewrite it. |
 | `docs/SPEC.md` | Product truth — what Atlas does and what "correct" means | Authoritative for behaviour |
@@ -15,8 +15,8 @@ This file tells you **how to work in this repository**. It is not the product vi
 | `docs/DECISIONS.md` | Log of settled choices (D1–D125) | Record; supersede via ADR only |
 | `CLAUDE.md` | How to work here | This file |
 
-**Read order before any non-trivial change:** `docs/STATUS.md` → `docs/AUDIT-2026-08-29.md` §15
-(**§15.9 is the live ordered task list**, §15.8 is what not to do), then §14 and §13 →
+**Read order before any non-trivial change:** `docs/STATUS.md` → `docs/AUDIT-2026-08-29.md` §16,
+then §15 (**§15.9 is the live ordered task list**, §15.8 is what not to do), then §14 and §13 →
 `docs/SPEC.md` §17 → `docs/ARCHITECTURE.md` **§2.1** (the HTTP surface) and §11 → the relevant ADR →
 the code.
 

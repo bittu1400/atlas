@@ -529,14 +529,19 @@ detectable. T-25 remains the fix.
 
 ### 17.5 Quality (§8)
 
-- §8.3 deterministic checks: **narrowed 2026-08-31, still open (defect R-04, task T-20).** The
-  pipeline's own plans are now honest — `ScriptAgent._compute_timing_plan` sets
-  `total_duration_seconds` from the summed beat durations, and the persisted plan is what the judge
-  reads (ADR-0016), so a pipeline-produced plan can no longer lie. **What remains:**
-  `TimingPlan.total_duration_seconds` still carries `default=60.0` in
-  `domain/script/models.py`, so any plan constructed without that field — a fixture, a future
-  caller, a repair path — reports 60.0 regardless of its beats and passes the 58–62 s check. The
-  default must go and the value must be derived or validated at construction.
+- §8.3 deterministic checks: **CLOSED 2026-09-04 (defect R-04, task T-20, D129). Code changed.**
+  `TimingPlan.total_duration_seconds` is no longer a field with a default — it is computed from the
+  beat timings, so no plan, from any caller, can state a duration its own timeline does not support.
+  The 58–62 s check now measures something.
+- §8.3, **new divergence opened by the row above (defect V-14, task T-61).** Closing R-04 made a
+  larger absence visible: **nothing in Atlas makes a Script's duration land inside 58–62 s.**
+  ADR-0006 §2 promises fitting — solve per-Beat hold for a total within ±2 s of target, fail loudly
+  and route back to the Script stage when infeasible. `_compute_timing_plan` accumulates instead: one
+  pass summing `beat.duration_seconds`, no target, no solve, no repair path. The prompt asks for
+  12–18 beats of 3.0–4.5 s, which spans **36 s to 81 s**, so a fully prompt-compliant script can be
+  rejected at stage 17 with no stage able to fix it. Invisible so far because `FakeLlm` returns
+  exactly 15 beats × 4.0 s = 60.0 s: the fixture hits the bound by construction and the suite passes
+  over a mechanism that does not exist. **Open**, **T-61**, and sequenced **before T-34**.
 - §8.1 rubric: eight dimensions, implemented and enforced by Pydantic. Correct.
 - §8.4 calibration and the golden set do not exist. This blocks ADR-0012's quality measurement.
 
@@ -610,4 +615,17 @@ the register of where the spec and the code disagreed, not only of where they st
 | §5 | Still open: an operator approving the asset-selection gate cannot see the candidates they are approving, and the same holds for the script and quality gates. The panels that claimed to show them were fixtures. | **Open**, **T-59** |
 | §11 | Still open: "per-Run quota reservations, so the first video of the day cannot starve the third" and "response caching keyed on input hash plus prompt version plus model" are both unimplemented. `platform/cache.py` exists and no adapter calls it. | **Open**, **T-60** |
 | §11 / §12 | Still open: an exhausted quota **fails** the Run. ADR-0004 says it suspends and notifies. This mattered little while the limit was per-process and unreachable; now that the budget is shared and real (**D115**) a Run can hit it mid-flight and lose every completed stage. | **Open**, **T-60** (defect V-13) |
-| §8.4 | Still open: no golden set, and now also **no browser test**. Guard 8 asserts the dashboard's *sources* carry no fixture; nothing asserts what the screen renders. | **Open**, `docs/STATUS.md` §3 |
+| §8.4 | **Half closed 2026-09-03 (T-55, ADR-0018, D127). Code changed:** `apps/web/e2e/dashboard.spec.ts` drives real Chromium and asserts what the screen renders against API data, so the browser-test half of this row is met. This row still said "no browser test" on 2026-09-04, a day after it stopped being true — recorded because a register that lags the code is the failure mode §17 exists to prevent. **Still open:** the golden set. | **Open**, **T-36** |
+
+### 17.10 Divergences found on 2026-09-04
+
+| Spec section | Divergence | State |
+|---|---|---|
+| §8.3 (deterministic checks) | `TimingPlan.total_duration_seconds` defaulted to 60.0, so a plan built without it satisfied the 58–62 s check with no seconds behind it. | **Closed** — code changed (T-20, **D129**) |
+| §8.3 / ADR-0006 §2 | The Timing Plan **accumulates** beat durations where ADR-0006 promises **fitting** to a target with a loud failure and a route back to the Script stage. Prompt-compliant scripts span 36–81 s against a 58–62 s gate; `FakeLlm` hides it by returning exactly 60.0 s. | **Open**, **T-61** (defect **V-14**) |
+| §14 (operations) | CI ran no check that could fail the build, and no check gated a merge. | **Closed** — CI is green and `main` requires the `test` check (T-00, T-11, **D130**–**D133**) |
+
+**Note on §17.9's last row.** It claimed "no browser test" until 2026-09-04, one day after T-55 landed
+it. Corrected in place above. A divergence register that trails the code by a session is the same
+hazard as a STATUS that trails it — it is read as current.
+

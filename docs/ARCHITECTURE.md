@@ -383,6 +383,7 @@ statement of where this screen stands, and **T-59** is how it stops being true.
 | Golden | The hand-scored quality set. Re-run on every prompt change to catch quality regressions. **Does not exist** — task **T-36**. |
 | Structural guards | Nine AST-and-text checks in `tests/unit/test_no_fabrication.py`, three of which also run in the commit hook. Guards 1–7 cover Python; **8 covers `apps/web/src` and `apps/renderer/src`**; 9 covers model metering. ADR-0014, ADR-0017. |
 | Browser | Real Chromium via Playwright (`apps/web/e2e/dashboard.spec.ts`). Asserts what the dashboard renders against API data and verifies negative defect sensitivity (T-55, ADR-0018, D127). |
+| CI | `.github/workflows/ci.yml`, on push to `main`/`docs/**` and on every PR to `main`: Ruff, mypy, `alembic upgrade head` against a Postgres service, pytest, Playwright, and the three pnpm builds. **Blocking since 2026-09-04** — `main` requires the `test` check (T-00, T-11, D132). It installs ffmpeg, without which the one test that shells out to it skips silently (D133). |
 
 The fakes package is load-bearing infrastructure, not test scaffolding. If e2e tests need real providers,
 they will quietly stop being run, and the pipeline will rot.
@@ -409,7 +410,15 @@ content-addressed blobs mean the migration is a configuration change and a file 
 
 **Configuration** — `.env` for secrets, YAML for structure (routing policy, style profiles, research
 profiles, gate defaults), and runtime overrides in the database for anything the dashboard can toggle.
-Nothing is hardcoded; every layer is documented in the deployment guide.
+Nothing is hardcoded; every layer is documented in the deployment guide. **Two of those three
+sentences are still false** — see §11.7.
+
+**Continuous integration** — GitHub Actions runs the full gate on every push to `main` or `docs/**`
+and on every PR to `main`; `main` requires the `test` check to pass before a merge (2026-09-04,
+**D132**). `enforce_admins` is false, so an administrator can still override — "blocking" here means
+"blocks the merge button", not "unbypassable". The workflow is the only thing that runs
+`alembic upgrade head` against a fresh database on a regular basis; no session has done so locally
+since 2026-09-03.
 
 ---
 
@@ -431,6 +440,7 @@ quietly edited to match the code. When a row is closed, the session says **which
 | 2026-08-29 | HEAD `9938244` | Register created, A-01 → A-08. |
 | 2026-08-29 (Stage C review) | `c776b59` + working tree | §11.5 updated (D72); `PipelineStage` moved to `domain/execution/` (G-06, T-42). |
 | 2026-08-29 (Stage C remediation) | `c776b59` + working tree | `packages/fakes/` deleted (SC-13, T-52); §11.1 and §11.6 rows rewritten. |
+| 2026-09-04 (CI, T-20, documentation reconciliation) | `bcf60ab`, clean tree | §11.7d added. §2.1 re-checked against `app.openapi()` — 12 operations, unchanged, auth column verified route by route. Cassette rows in §11.8 were pointing at T-36; corrected to **T-58**. New structural divergence **V-14** recorded (§11.8, task T-61). |
 | **2026-08-31 (verification session + documentation pass)** | **`714cade` and later, clean tree** | **§11.1 closed in full (T-40); §11.2, §11.5, §11.6 closed; §11.3, §11.4, §11.7 partially closed. Sections 1–10 above were rewritten to the real tree.** Five rows remain open, all listed below with the reason each is open by decision rather than by oversight. |
 
 ### 11.1 Folder layout (§2) — **CLOSED 2026-08-31 (T-40)**
@@ -489,7 +499,7 @@ except where noted.
 | Claim | Reality |
 |---|---|
 | "End-to-end … against `packages/fakes/`" | **Closed 2026-08-31 (T-40).** §9 names `adapters/fakes/`. Doc changed. |
-| "Cassettes — real provider responses recorded once, replayed thereafter" | **Still does not exist.** No cassette files, no recording mechanism, no library. Open. |
+| "Cassettes — real provider responses recorded once, replayed thereafter" | **Still does not exist.** No cassette files, no recording mechanism, no library. Open — **T-58**. |
 | "Golden — the hand-scored quality set" | **Still does not exist.** Prerequisite for ADR-0012's quality measurement. Open — **T-36**. |
 | Unit: "No network, no database, no filesystem" | `tests/unit/test_layering_boundaries.py` and `test_no_fabrication.py` read the filesystem by design — they are AST guards over the source tree. Accepted; the rule as written forbids it. **Doc changed:** §9's Unit row should be read as "no network, no database, no GPU"; source-tree reads by static guards are exempt. |
 
@@ -526,6 +536,15 @@ findings in `docs/AUDIT-2026-08-29.md` §15.
 | `.gitignore` | **Tree.** Anchored `/var/`, `/storage/`, `/out/` to root so `packages/atlas/src/atlas/adapters/storage/local.py` is tracked. | Resolves uncommitted storage adapter |
 | `PipelineRunner._resolve_topic_title` | **Tree.** Fetches `Topic` from `SourceRepository` and passes `topic.title` to agents and queries. | T-22, D128 |
 
+### 11.7d Structure changed on 2026-09-04
+
+| Item | Which side changed | Note |
+|---|---|---|
+| `domain/script/models.py` | **Tree.** `TimingPlan.total_duration_seconds` goes from a field defaulting to `60.0` to a computed field derived from `beat_timings`. The kwarg is dropped at its three construction sites. The `timing_plans.total_duration_seconds` column and its check constraint are unchanged and now written from the derived value — **no migration**. | T-20, R-04, D129 |
+| `tests/__init__.py` | **Tree.** Added, making the test tree one package. `tests/unit/` was a package while `tests/` was not, so mypy resolved the same file under two module names as soon as one test imported another. | D129 |
+| `.github/workflows/ci.yml` | **Tree.** Playwright's install is filtered to `@atlas/web` (the binary is not at the root), and ffmpeg is installed so `test_production_adapters.py:148` runs instead of skipping. | D131, D133 |
+| `main` branch protection | **Repository settings.** Requires the `test` check; force pushes and deletions disabled; `enforce_admins` left false. Not a file in the tree, recorded here because §10 claims a deployment posture and this is part of it. | T-11, D132 |
+
 ### 11.8 Open structural items carried forward
 
 Everything above that is still open, in one list, so the next session does not have to re-derive it:
@@ -538,8 +557,10 @@ Everything above that is still open, in one list, so the next session does not h
 | No structured-output repair attempt | — | Both LLM adapters fail immediately on malformed JSON. |
 | Providers selected by import, not configuration | **T-29** | Needs the settings surface T-29 introduces. |
 | `trace_id` never bound into the logging context | — | One `structlog.contextvars.bind_contextvars` call at run start; nobody has made it. |
-| No cassettes, no golden set | **T-36** | Blocks ADR-0012's quality measurement. |
+| No cassettes | **T-58** | Blocks a debuggable first real run. Was filed against T-36 here until 2026-09-04; T-36 is the golden set, T-58 is the cassettes. |
+| No golden set | **T-36** | Blocks ADR-0012's quality measurement. |
 | Model IDs hardcoded | **T-29** | ADR-0012 records the decision; the implementation is unstarted. The Ollama base URL left this row on 2026-08-31 — it is `Settings.ollama_base_url` (**D116**). |
 | No YAML configuration surface | **T-29** | Same. |
-| No cassette for any network adapter | **T-36** | Seven wired adapters reach the network and none has a test, because a unit test may not and there is nothing to replay. `tests/integration/test_production_adapters.py` covers the six that do not. |
+| No cassette for any network adapter | **T-58** | Seven wired adapters reach the network and none has a test, because a unit test may not and there is nothing to replay. `tests/integration/test_production_adapters.py` covers the six that do not. |
+| The Timing Plan accumulates rather than fits | **T-61** | ADR-0006 §2 promises a solve against a target duration with a loud failure and a route back to the Script stage. `_compute_timing_plan` sums beat durations in one pass. Prompt-compliant scripts span 36–81 s against a 58–62 s judge bound, with no repair path; `FakeLlm` returns exactly 60.0 s, so nothing in the suite sees it. Defect **V-14**, found 2026-09-04. |
 | Gate review data has no endpoint | **D111** | The approval screen can show Gate rows and link to the Run's Knowledge Object and telemetry. Asset candidates, script beats and the quality report have no read model, so those panels were deleted rather than kept as fixtures. |

@@ -1,6 +1,6 @@
 # Status
 
-**Last updated:** 2026-09-04 (CI made green, T-20 timing-plan duration derived)
+**Last updated:** 2026-09-04 (CI green and blocking, T-20 closed, registers reconciled, V-14 found)
 **Branch:** `docs/audit-2026-08-29` — see §1.
 
 This file separates **decided** from **done**. Everything else in `docs/` records what Atlas *will*
@@ -14,8 +14,9 @@ current claim.
 
 ## 0. Measured baseline
 
-Measured on 2026-09-04, in the session that wrote this section, after the two CI fixes and the T-20
-timing-plan change. **Re-run them before quoting them** (**R7**).
+Measured on 2026-09-04, in the session that wrote this section, after the two CI fixes, the T-20
+timing-plan change, branch protection and the ffmpeg CI step. **Re-run them before quoting them**
+(**R7**).
 
 ```
 $ uv run ruff check .
@@ -50,12 +51,12 @@ $ uv run python -c "from apps.api.main import app; print(len(app.openapi()['path
 `alembic upgrade head` was **not** re-run against a fresh `atlas` database this session; the 7 and the
 30 above are counted from the migration files and from `Base.metadata`, which is a weaker measurement
 than the previous session's and is written down as such rather than carried forward as if it were the
-same command (**R7**). CI runs the real `alembic upgrade head` on every push and it passed — see below.
+same command (**R7**). CI runs the real `alembic upgrade head` on every push and it passed.
 
-There are no `xfail` markers in the suite. One test skips: `test_production_adapters.py:149` requires
-ffmpeg, which is present locally and **absent from the GitHub runner image**, so the only test that
-shells out to real ffmpeg is silently skipped in CI. Measured 2026-09-04: local `166 passed`; CI
-`162 passed, 1 skipped` on run 33881891323, which predates the 3 T-20 tests.
+There are no `xfail` markers in the suite, and as of 2026-09-04 there are **no skips in CI either**:
+`test_production_adapters.py:148` needs ffmpeg, the runner image has none, and `ci.yml` now installs
+it (**D133**). Before that step, the only test that shells out to real ffmpeg passed locally and
+skipped on the runner — a green CI that did not cover the renderer path.
 
 **The count moved by three**, all of them the T-20 tests in
 `tests/unit/test_timing_plan_duration.py`. The lesson attached to these numbers is older and still
@@ -66,9 +67,9 @@ not. The suite exercises the pipeline **against fakes**, and until that day no t
 thirteen defects, of which three were P0 and none had a task in the register before they were found.
 Twelve are fixed; **V-13** is open by decision (**D125**, task **T-60**).
 
-**CI status: green.** Run
+**CI status: green, and blocking.** Run
 [33881891323](https://github.com/bittu1400/atlas/actions/runs/33881891323) on `6e5a4e1` — all 22
-steps success, on both the `push` and `pull_request` events. It ran, in order: Ruff, mypy,
+steps success, on both the `push` and `pull_request` events; re-verified green on `579d1c5`. It ran, in order: Ruff, mypy,
 `alembic upgrade head`, `pytest` (162 passed, 1 skipped), Playwright (4 passed), and the three pnpm
 builds. Two distinct bugs had to be fixed to get there, and neither was in the test suite:
 
@@ -84,23 +85,38 @@ builds. Two distinct bugs had to be fixed to get there, and neither was in the t
    (`ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL`). Reproduced locally with the identical error, then fixed by
    filtering the exec to the workspace (`ci.yml:70`, commit `6e5a4e1`).
 
-**T-00 is closed: CI runs and it is green.** **T-11 is not** — making the check *blocking* is a
-branch-protection setting on `main`, not a commit, and it is an operator action.
+**T-00 and T-11 are both closed.** `main` now requires the `test` check: branch protection was set
+via `gh api` and read back — `required_status_checks.contexts` is `["test"]`, force pushes and
+deletions disabled (**D132**). One caveat that must not be rounded off: **`enforce_admins` is
+false**, so an administrator can still override. "Blocking" here means the merge button is blocked,
+not that the gate cannot be bypassed.
+
+T-11's *Done when* — a deliberately introduced lint error fails CI — was **not** literally exercised.
+Two genuine failures the same day already showed the build goes red on a non-zero exit, and pushing a
+knowingly broken commit to demonstrate a property twice would leave it in the branch history for no
+new information. Recorded rather than ticked silently.
 
 ---
 
 ## 1. Working tree state
 
 Clean on branch `docs/audit-2026-08-29`. The most recent behavioural commit is the T-20 timing-plan
-change, preceded by the two CI fixes, the T-22 topic title resolution, the T-55 Playwright browser
-test suite, the V-01 – V-12 remediation, and the documentation reconciliation that found **V-13** and
-deliberately left it to task **T-60** (**D125**).
+change, preceded by the two CI fixes, the ffmpeg CI step, the T-22 topic title resolution, the T-55
+Playwright browser test suite, the V-01 – V-12 remediation, and the documentation reconciliation that
+found **V-13** and deliberately left it to task **T-60** (**D125**).
+
+**One change this session is not in the tree at all:** branch protection on `main` is a repository
+setting, not a file. `ARCHITECTURE.md` §10 and §11.7d record it, because a deployment posture that
+exists only in GitHub's database is exactly the kind of state that gets forgotten and then
+contradicted.
 
 This file deliberately does not name its own HEAD. A document that states the hash of the commit
 containing it is wrong the moment it is committed. `git log --oneline -5` is the source of truth.
 
 **The branch is pushed to `origin/docs/audit-2026-08-29`** and PR #1 is open against `main` with CI
-green. The T-20 commit and this documentation update are ahead of `origin` until pushed.
+green. This documentation update is ahead of `origin` until pushed — and per **D130**, a session that
+ends without pushing has left its own verification undone, because CI tests `origin`, not the
+working tree.
 
 ---
 
@@ -138,7 +154,8 @@ free. It is now a computed field derived from the last beat's end time, so the s
 cannot disagree with the timeline behind it. `tests/unit/test_timing_plan_duration.py` asserts the
 derivation, asserts that a caller passing `60.0` still gets `3.5`, and asserts that the judge
 rejects the short plan — the last of which failed with `duration_bounds is True` before the change,
-which is defect **R-04** reproduced.
+which is defect **R-04** reproduced. **What this does not do is make the duration correct**, only
+honest: nothing steers a Script towards 60 s. See §3 and defect **V-14**.
 
 **Phase 5 · Agents** — complete. Topic discovery, research, extraction, verification, story angle,
 script, storyboard, sound design and quality judge. An ORIGINS Topic yields a source-traced
@@ -247,6 +264,15 @@ a feature.
   report — not fixtures (**D111**, audit §15.7).
 - **A real-provider run.** `docker compose up` now builds, but no Run has ever executed against
   Gemini, Ollama or Freesound end to end. **T-34**, still sequenced after T-29 and T-30.
+- **Timing that fits a target duration.** ADR-0006 §2 promises the Timing Plan solves per-Beat hold
+  for a total within ±2 s of target and fails loudly, routing back to the Script stage, when no
+  solution exists. `_compute_timing_plan` accumulates instead — one pass summing beat durations, no
+  target, no solve, no repair path — and the prompt asks for 12–18 beats of 3.0–4.5 s, spanning
+  **36 s to 81 s** against a judge that accepts 58–62 s. So a fully prompt-compliant script can be
+  rejected at stage 17 and no stage can fix it. It has never bitten because `FakeLlm` returns exactly
+  15 beats × 4.0 s = 60.0 s: the fixture lands on the bound by construction, and the whole suite
+  passes over a mechanism that is not there. Defect **V-14**, task **T-61**, found 2026-09-04 by
+  reading ADR-0006 against the code while closing T-20.
 - **A `blobs` table.** Blobs are written to `var/blobs/sha256/…` with no database row, so there is
   no reference count and no deduplication bookkeeping.
 - **YAML configuration.** Routing policy and gate defaults are Python dicts; style and research
@@ -299,6 +325,10 @@ These are real and are not being hidden; each is recorded with the decision that
   defect **V-13**, task **T-60**.
 - **Per-Run quota reservations and response caching do not exist.** SPEC §11 promises both.
   `platform/cache.py` is written and no adapter calls it. Same task, **T-60**.
+- **The Timing Plan accumulates rather than fits.** Recorded on the day it was found rather than
+  fixed, because the two honest routes — implement ADR-0006 §2, or supersede it and constrain the
+  prompt's *sum* — are both behaviour changes with a design decision inside them, and a documentation
+  session does not quietly change behaviour (**D106**, **D125** precedent). **D134**, task **T-61**.
 - **The approval screen shows Gate rows and nothing else.** An operator can see which Gate is
   pending and open the Run's Knowledge Object and telemetry, but cannot review asset candidates,
   script beats or the quality report in place — §3, **D111**.
@@ -307,19 +337,23 @@ These are real and are not being hidden; each is recorded with the decision that
 
 ## 5. Where to look next
 
-**Read order for the next session:** this file → `docs/AUDIT-2026-08-29.md` **§15** (what the second
-2026-08-31 verification found; **§15.9** is the live ordered work list, **§15.8** is what not to do),
-then §14 and §13 for the two sessions before it → `docs/SPEC.md` §17 → `docs/ARCHITECTURE.md` **§2.1**
-(the HTTP surface — the contract the dashboard codes against) and §11 → the relevant ADR → the code.
+**Read order for the next session:** this file → `docs/AUDIT-2026-08-29.md` **§16** (the 2026-09-04
+session; short, and it carries the new defect **V-14**) → **§15** (what the second 2026-08-31
+verification found; **§15.9** is the live ordered work list, kept current, and **§15.8** is what not
+to do) → §14 and §13 for the sessions before → `docs/SPEC.md` §17 (**§17.10** is newest) →
+`docs/ARCHITECTURE.md` **§2.1** (the HTTP surface — the contract the dashboard codes against) and §11
+(**§11.7d** is newest) → the relevant ADR → the code.
 
 `docs/AUDIT-2026-08-29.md` is the authoritative register of what is broken. **§15.9 supersedes §14.2**
 as the ordered list. Its first three, in short:
 
-1. **T-11 — make the CI check blocking.** T-00 and T-20 are closed by this session. All that is left
-   of T-11 is branch protection on `main` requiring the `test` check, which is a repository setting
-   and therefore an **operator action**, not a commit.
+1. **T-61 — fit the Timing Plan, or amend ADR-0006.** New this session (defect **V-14**). The plan
+   accumulates where the ADR promises fitting; prompt-compliant scripts span 36–81 s against a
+   58–62 s gate with no repair path. **Do this before T-34** — the first real-provider run is exactly
+   where that spread meets that gate, on a 20-request daily budget.
 2. **T-53 — the unreachable gate-stage branch.** Decide and document.
-3. **T-57 — consistent auth dependency on the API.** Two routes are missing `verify_api_key`.
+3. **T-57 — consistent auth dependency on the API.** Two routes are missing `verify_api_key` —
+   `GET /runs/{id}/steps` and `GET /runs/{id}/gates`, verified route by route on 2026-09-04.
 
 **Do not start T-34** (the honest real-provider run) before **T-29**, **T-30** and now **T-58**. The
 Gemini free tier allows 20 requests a day and a correct run needs 6–9; that scarcity is the direct
@@ -339,11 +373,12 @@ second session.
   `Dockerfile` is new and unbuilt. Expect to debug the image once, not to have it work first try.
 - **`alembic upgrade head` was not run locally against a fresh `atlas` database.** §0 says which
   weaker commands produced the 7 and the 30 instead. CI runs the real thing.
-- **ffmpeg is absent from the GitHub runner image**, so `test_production_adapters.py:149` — the only
-  test that shells out to real ffmpeg — passes locally and skips in CI. Green CI does not cover it.
-  Not filed as a task; note it before trusting CI on anything renderer-shaped.
-- **CI is green but not blocking.** Nothing stops a red commit from merging until T-11's branch
-  protection is set.
+- **No verification pass.** The registers were reconciled against the code — narrower than audit
+  §15's re-measurement, which was not repeated. `ARCHITECTURE.md` §2.1 *was* re-checked against
+  `app.openapi()` route by route, including the auth column.
+- **V-14 was found, not fixed.** See §4 and **D134**.
+- **CI is blocking but not unbypassable.** `enforce_admins` is false; an administrator can override
+  the required check.
 
 ### Session close-out checklist
 

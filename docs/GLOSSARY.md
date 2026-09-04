@@ -102,7 +102,11 @@ that license it. The atom of the no-narration format.
 
 **Timing Plan** — The computed schedule that fits Beats to the target duration: reveal rate, hold
 duration, cut points, beat-to-music alignment. The single artifact that text animation, sound effects,
-cuts, and captions all read from, guaranteeing they cannot drift apart.
+cuts, and captions all read from, guaranteeing they cannot drift apart. *As built, it does not yet
+fit:* `_compute_timing_plan` accumulates beat durations and `total_duration_seconds` is derived from
+them, so the plan reports its duration honestly (**D129**) but nothing steers that duration towards
+the target — defect **V-14**, task **T-61**. The definition above is the intended meaning and stands;
+this note exists so the word "fits" is not read as a description of the code.
 
 **Story Angle** — The narrative framing chosen for one Script, selected at pipeline stage 8 from the
 verified Claims of the Knowledge Object and stored on the Script. One Knowledge Object supports many
