@@ -67,7 +67,7 @@ jobs:
       run: pnpm install
 
     - name: Install Playwright browsers
-      run: pnpm exec playwright install --with-deps chromium
+      run: pnpm --filter @atlas/web exec playwright install --with-deps chromium
 
     - name: Run browser tests
       run: pnpm test
