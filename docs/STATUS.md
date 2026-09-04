@@ -1,6 +1,6 @@
 # Status
 
-**Last updated:** 2026-09-03 (browser testing T-55, real topic title T-22, CI configuration and unblocking)
+**Last updated:** 2026-09-04 (CI made green, T-20 timing-plan duration derived)
 **Branch:** `docs/audit-2026-08-29` — see §1.
 
 This file separates **decided** from **done**. Everything else in `docs/` records what Atlas *will*
@@ -14,64 +14,93 @@ current claim.
 
 ## 0. Measured baseline
 
-Measured on 2026-09-03, in the session that wrote this section, after the T-55 Playwright browser testing
-implementation, the T-22 topic title resolution, and the CI workflow fixes. **Re-run them before quoting them** (**R7**).
+Measured on 2026-09-04, in the session that wrote this section, after the two CI fixes and the T-20
+timing-plan change. **Re-run them before quoting them** (**R7**).
 
 ```
 $ uv run ruff check .
 All checks passed!
 
 $ uv run mypy .
-Success: no issues found in 161 source files
+Success: no issues found in 163 source files
 
 $ uv run pytest --tb=short
-163 passed in 23.42s
+166 passed in 17.72s
+
+$ uv run pre-commit run --all-files
+Ruff Lint Check / Ruff Format Check / Anti-Fabrication Structural Guard — Passed
 
 $ pnpm test
-4 passed in 2.9s (apps/web/e2e/dashboard.spec.ts, Playwright Chromium)
+4 passed (2.5s) — apps/web/e2e/dashboard.spec.ts, Playwright Chromium
 
 $ pnpm -r build
 packages/tokens · apps/renderer · apps/web — 3 of 3 built
 
-$ uv run alembic upgrade head          # against a fresh `atlas` database
-7 migrations applied, 30 tables + alembic_version
+# 2026-09-04, same session:
+$ ls .../alembic/versions/*.py | grep -v __init__ | wc -l
+7 migrations on disk
 
-$ python -c "from apps.api.main import app; print(len(app.openapi()['paths']))"
+$ uv run python -c "from atlas.adapters.persistence.tables import Base; print(len(Base.metadata.tables))"
+30 tables
+
+$ uv run python -c "from apps.api.main import app; print(len(app.openapi()['paths']))"
 11 paths, 12 operations — transcribed in ARCHITECTURE §2.1
 ```
 
-There are no `xfail` markers in the suite.
+`alembic upgrade head` was **not** re-run against a fresh `atlas` database this session; the 7 and the
+30 above are counted from the migration files and from `Base.metadata`, which is a weaker measurement
+than the previous session's and is written down as such rather than carried forward as if it were the
+same command (**R7**). CI runs the real `alembic upgrade head` on every push and it passed — see below.
 
-**The three headline numbers held when this session re-measured the previous one's** — the count
-moved because two stale quota tests were deleted (**D120**), one test of a deleted endpoint went with
-it (**D121**), thirty-nine were added, and three were added for T-22. What did not hold was the claim those numbers were taken
-to support. The suite exercises the pipeline **against fakes**; until this session no test
-constructed `Container` or called any adapter it wires except
-`LocalStorage`. The first production adapter substituted into a real Run — `LoggingNotifier` — raised
+There are no `xfail` markers in the suite. One test skips: `test_production_adapters.py:149` requires
+ffmpeg, which is present locally and **absent from the GitHub runner image**, so the only test that
+shells out to real ffmpeg is silently skipped in CI. Measured 2026-09-04: local `166 passed`; CI
+`162 passed, 1 skipped` on run 33881891323, which predates the 3 T-20 tests.
+
+**The count moved by three**, all of them the T-20 tests in
+`tests/unit/test_timing_plan_duration.py`. The lesson attached to these numbers is older and still
+stands: on 2026-08-31 the three headline numbers held while the claim they were taken to support did
+not. The suite exercises the pipeline **against fakes**, and until that day no test constructed
+`Container` or called any adapter it wires except `LocalStorage`. The first production adapter substituted into a real Run — `LoggingNotifier` — raised
 `TypeError` at the first gate of every Run. That is defect **V-01**, and audit §15 has the rest —
 thirteen defects, of which three were P0 and none had a task in the register before they were found.
 Twelve are fixed; **V-13** is open by decision (**D125**, task **T-60**).
 
-**CI status:** On 2026-09-03, branch `docs/audit-2026-08-29` was pushed to `origin` and PR #1 opened.
-CI triggered and verified lint (Ruff) and typecheck (Mypy) successfully. Pytest and Alembic migrations
-failed in the GitHub Actions runner due to container database authentication (`fe_sendauth: no password supplied`).
-Fixes were implemented and verified locally (`alembic/env.py`, job-level `ATLAS_DATABASE_SYNC_URL`, `ci.yml`,
-and `test_cli_quota_status`), but remote CI debugging was paused by operator decision to tackle other priorities.
-Closing **T-00** and **T-11** remains to be finalized in a future session.
+**CI status: green.** Run
+[33881891323](https://github.com/bittu1400/atlas/actions/runs/33881891323) on `6e5a4e1` — all 22
+steps success, on both the `push` and `pull_request` events. It ran, in order: Ruff, mypy,
+`alembic upgrade head`, `pytest` (162 passed, 1 skipped), Playwright (4 passed), and the three pnpm
+builds. Two distinct bugs had to be fixed to get there, and neither was in the test suite:
+
+1. **The migration step could not authenticate.** `alembic.ini` hardcodes
+   `postgresql+psycopg://postgres@localhost:5432/atlas`, with no password, and the revision on the
+   runner used it in preference to the job's `ATLAS_DATABASE_SYNC_URL` — hence
+   `fe_sendauth: no password supplied`. The fix was written and committed **locally on 2026-09-03 and
+   never pushed**, so CI kept re-running the broken revision. Nothing needed to change; the commits
+   needed to leave the laptop. *A fix that is not pushed is not a fix* — CI can only test what
+   `origin` has.
+2. **Playwright's browsers could not be installed.** `@playwright/test` is a devDependency of
+   `apps/web`, so `pnpm exec playwright` at the repository root resolved no binary
+   (`ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL`). Reproduced locally with the identical error, then fixed by
+   filtering the exec to the workspace (`ci.yml:70`, commit `6e5a4e1`).
+
+**T-00 is closed: CI runs and it is green.** **T-11 is not** — making the check *blocking* is a
+branch-protection setting on `main`, not a commit, and it is an operator action.
 
 ---
 
 ## 1. Working tree state
 
-Clean on branch `docs/audit-2026-08-29`. The most recent behavioural commit is the T-22 topic title resolution,
-preceded by the T-55 Playwright browser test suite, the V-01 – V-12 remediation, and the documentation
-reconciliation that found **V-13** and deliberately left it to task **T-60** (**D125**).
+Clean on branch `docs/audit-2026-08-29`. The most recent behavioural commit is the T-20 timing-plan
+change, preceded by the two CI fixes, the T-22 topic title resolution, the T-55 Playwright browser
+test suite, the V-01 – V-12 remediation, and the documentation reconciliation that found **V-13** and
+deliberately left it to task **T-60** (**D125**).
 
 This file deliberately does not name its own HEAD. A document that states the hash of the commit
 containing it is wrong the moment it is committed. `git log --oneline -5` is the source of truth.
 
-**The branch is pushed to `origin/docs/audit-2026-08-29`** with PR #1 opened against `main`. Recent local
-commits (alembic env fix and T-22) are currently ahead of `origin`.
+**The branch is pushed to `origin/docs/audit-2026-08-29`** and PR #1 is open against `main` with CI
+green. The T-20 commit and this documentation update are ahead of `origin` until pushed.
 
 ---
 
@@ -101,6 +130,15 @@ via Playwright** (task **T-55**, **ADR-0018**): `apps/web/e2e/dashboard.spec.ts`
 asserting that the dashboard renders live API topic IDs, gate step IDs, error banners on failed actions,
 and real snapshot hashes without fixtures.
 
+
+**A Timing Plan can no longer overstate its own duration (T-20, D129).**
+`TimingPlan.total_duration_seconds` was a plain field defaulting to `60.0`; a plan carrying 3.5
+seconds of beats reported a full minute and satisfied the judge's 58–62 s deterministic check for
+free. It is now a computed field derived from the last beat's end time, so the stated duration
+cannot disagree with the timeline behind it. `tests/unit/test_timing_plan_duration.py` asserts the
+derivation, asserts that a caller passing `60.0` still gets `3.5`, and asserts that the judge
+rejects the short plan — the last of which failed with `duration_bounds is True` before the change,
+which is defect **R-04** reproduced.
 
 **Phase 5 · Agents** — complete. Topic discovery, research, extraction, verification, story angle,
 script, storyboard, sound design and quality judge. An ORIGINS Topic yields a source-traced
@@ -235,12 +273,6 @@ These are real and are not being hidden; each is recorded with the decision that
   check the `adapters → application` direction. ADR-0014.
 - **No repair attempt on malformed structured output.** `ARCHITECTURE.md` §5 promises one; both LLM
   adapters fail immediately instead.
-- **Agents receive `topic_id` where a title belongs.** Four sites in `runner.py` pass
-  `topic_title=run.topic_id`, so every prompt and search query sees `origin_of_mathematics` rather
-  than the `topics` row's real title. Audit task **T-22** — the cheapest open item on the list.
-- **`TimingPlan.total_duration_seconds` still defaults to `60.0`.** The pipeline's own plans are
-  computed from beats, so the running system is honest, but any plan built without that field
-  reports 60.0 and passes the 58–62 s deterministic check. Audit task **T-20**, defect R-04.
 - **`PUBLISH` succeeds against a stub publisher.** The stage now really calls the publisher and
   records what it returns, but `StubPublisher` returns `stub:<artifact-id>` and the run reaches
   `completed` having published nothing. It also ignores `PublishScheduler` and the blackout rule.
@@ -283,11 +315,11 @@ then §14 and §13 for the two sessions before it → `docs/SPEC.md` §17 → `d
 `docs/AUDIT-2026-08-29.md` is the authoritative register of what is broken. **§15.9 supersedes §14.2**
 as the ordered list. Its first three, in short:
 
-1. **T-00 / T-11 — CI.** Pushing `docs/audit-2026-08-29` and opening a PR triggers CI with the database
-   and Playwright fixes.
-2. **T-20 — remove `TimingPlan.total_duration_seconds`'s default.** A deterministic check a default
-   can satisfy is not a check.
-3. **T-53 — the unreachable gate-stage branch.** Decide and document.
+1. **T-11 — make the CI check blocking.** T-00 and T-20 are closed by this session. All that is left
+   of T-11 is branch protection on `main` requiring the `test` check, which is a repository setting
+   and therefore an **operator action**, not a commit.
+2. **T-53 — the unreachable gate-stage branch.** Decide and document.
+3. **T-57 — consistent auth dependency on the API.** Two routes are missing `verify_api_key`.
 
 **Do not start T-34** (the honest real-provider run) before **T-29**, **T-30** and now **T-58**. The
 Gemini free tier allows 20 requests a day and a correct run needs 6–9; that scarcity is the direct
@@ -305,7 +337,13 @@ second session.
   wherever the daemon actually is.
 - **`docker compose up` was never run to completion.** `docker compose config` validates and the
   `Dockerfile` is new and unbuilt. Expect to debug the image once, not to have it work first try.
-- **The branch was not pushed.** That is an operator decision, and it is why CI is still dark.
+- **`alembic upgrade head` was not run locally against a fresh `atlas` database.** §0 says which
+  weaker commands produced the 7 and the 30 instead. CI runs the real thing.
+- **ffmpeg is absent from the GitHub runner image**, so `test_production_adapters.py:149` — the only
+  test that shells out to real ffmpeg — passes locally and skips in CI. Green CI does not cover it.
+  Not filed as a task; note it before trusting CI on anything renderer-shaped.
+- **CI is green but not blocking.** Nothing stops a red commit from merging until T-11's branch
+  protection is set.
 
 ### Session close-out checklist
 
