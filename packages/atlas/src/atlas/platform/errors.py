@@ -72,6 +72,19 @@ class SnapshotNotFoundError(KnowledgeError):
         self.snapshot_id = snapshot_id
 
 
+class TopicNotFoundError(KnowledgeError):
+    """Raised when a referenced Topic does not exist.
+
+    Defect V-16: without this type, an unknown `topic_id` reached the database
+    and came back as SQLAlchemy's `IntegrityError`, which the API answers with
+    a 500 because no handler recognises an infrastructure exception.
+    """
+
+    def __init__(self, topic_id: str) -> None:
+        super().__init__(f"Topic '{topic_id}' not found")
+        self.topic_id = topic_id
+
+
 class FocusError(AtlasError):
     """Base error for Focus and scoping operations."""
 
@@ -82,6 +95,14 @@ class FocusNotFoundError(FocusError):
     def __init__(self, focus_id: str) -> None:
         super().__init__(f"Focus '{focus_id}' not found")
         self.focus_id = focus_id
+
+
+class DomainNotFoundError(FocusError):
+    """Raised when a referenced Domain does not exist."""
+
+    def __init__(self, domain_id: str) -> None:
+        super().__init__(f"Domain '{domain_id}' not found")
+        self.domain_id = domain_id
 
 
 class ExecutionError(AtlasError):
@@ -244,6 +265,18 @@ class AiImageUnapprovedError(PolicyError):
             f"AI-generated asset '{asset_id}' requires explicit human approval before render"
         )
         self.asset_id = asset_id
+
+
+class PublishingError(AtlasError):
+    """Base error for publishing identities and their configuration."""
+
+
+class ChannelNotFoundError(PublishingError):
+    """Raised when a referenced Channel does not exist."""
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(f"Channel '{channel_id}' not found")
+        self.channel_id = channel_id
 
 
 class SchedulingError(AtlasError):

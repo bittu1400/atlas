@@ -311,3 +311,47 @@ async def test_telemetry_endpoint_reports_steps_and_metered_model_calls(
 
     timestamps = [e["timestamp"] for e in events]
     assert timestamps == sorted(timestamps, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_creating_a_run_for_an_unknown_topic_returns_a_typed_404(
+    api_client: AsyncClient,
+    db_session: AsyncSession,  # noqa: ARG001
+) -> None:
+    """Defect V-16: this was a 500 carrying the SQL and its bound parameters.
+
+    The foreign key was the only check, so `IntegrityError` — an infrastructure
+    exception no handler types — reached the catch-all. The dashboard's only
+    write path answered every operator typo this way.
+    """
+    response = await api_client.post(
+        "/runs",
+        json={"topic_id": "topic_absent", "channel_id": "origins", "actor_id": "operator_probe"},
+    )
+
+    assert response.status_code == 404
+    body = response.json()
+    assert body["error"] == "TopicNotFoundError"
+    assert body["topic_id"] == "topic_absent"
+
+
+@pytest.mark.asyncio
+async def test_creating_a_run_for_an_unknown_channel_returns_a_typed_404(
+    api_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """`channel_id` defaults to 'origins', so the same 500 was one bad default away."""
+    await _seed_api_topic(db_session, "topic_channel_probe")
+
+    response = await api_client.post(
+        "/runs",
+        json={
+            "topic_id": "topic_channel_probe",
+            "channel_id": "channel_absent",
+            "actor_id": "operator_probe",
+        },
+    )
+
+    assert response.status_code == 404
+    body = response.json()
+    assert body["error"] == "ChannelNotFoundError"
+    assert body["channel_id"] == "channel_absent"

@@ -136,6 +136,18 @@ class Container:
             raise SessionRequiredError("FocusRepository")
         return self.focus_repo
 
+    def require_source_repo(self) -> SourceRepository:
+        """Return the source repository, or fail if this container has no session."""
+        if self.source_repo is None:
+            raise SessionRequiredError("SourceRepository")
+        return self.source_repo
+
+    def require_publishing_repo(self) -> PublishingRepository:
+        """Return the publishing repository, or fail if this container has no session."""
+        if self.publishing_repo is None:
+            raise SessionRequiredError("PublishingRepository")
+        return self.publishing_repo
+
     def get_pipeline_runner(self) -> PipelineRunner:
         """Build the pipeline runner; requires a database session."""
         if (

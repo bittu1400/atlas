@@ -629,3 +629,12 @@ the register of where the spec and the code disagreed, not only of where they st
 it. Corrected in place above. A divergence register that trails the code by a session is the same
 hazard as a STATUS that trails it — it is read as current.
 
+### 17.11 Divergences found on 2026-09-05
+
+| Spec section | Divergence | State |
+|---|---|---|
+| §1 (goals), §15 phase 4 | **Nothing in production could create a Domain, a Topic or a Channel**, so "every gate is approvable from both the browser and the terminal" was moot: no Run could be created from either against a database a test had not seeded. Defect **V-15**. | **Closed** — three CLI commands (T-62, **D136**) |
+| §5 (failure semantics) | An unknown `topic_id` reached the database and returned as an untyped `IntegrityError`, which the API answered with a 500. Defect **V-16**. | **Closed** — the use case resolves both rows first and raises a typed error; 404 (T-63, **D137**) |
+| §1 ("full CLI parity with the dashboard") | **Now false in the CLI's favour.** `atlas domain/topic/channel create` have no HTTP equivalent, so an operator can create a Run from the dashboard only after using the terminal once. Deliberate — see **D136** — and the smaller half of the gap that existed this morning, when neither surface could do it. | **Open**, **T-64** |
+
+

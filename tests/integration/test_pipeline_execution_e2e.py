@@ -130,7 +130,7 @@ async def test_full_18_stage_pipeline_traversal_with_human_gates(
         quota_mgr=quota_mgr,
     )
 
-    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, queue_broker)
+    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, queue_broker, src_repo, pub_repo)
     approve_gate_uc = ApproveGateUseCase(exec_repo, queue_broker)
 
     # 0. Seed foreign keys
@@ -360,7 +360,7 @@ async def test_gate_structured_rejection_with_rework(
         quota_mgr=quota_mgr,
     )
 
-    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, queue_broker)
+    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, queue_broker, src_repo, pub_repo)
     reject_gate_uc = RejectGateUseCase(exec_repo, queue_broker)
 
     await _seed_topic_and_channel(focus_repo, src_repo, pub_repo, "origin_of_astronomy", "origins")
@@ -434,7 +434,7 @@ async def test_gate_rejection_with_abandonment(
         quota_mgr=quota_mgr,
     )
 
-    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, queue_broker)
+    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, queue_broker, src_repo, pub_repo)
     reject_gate_uc = RejectGateUseCase(exec_repo, queue_broker)
 
     await _seed_topic_and_channel(focus_repo, src_repo, pub_repo, "abandon_candidate", "origins")
@@ -516,9 +516,9 @@ async def test_pipeline_suspends_at_a_gate_with_the_production_notifier(
     )
 
     await _seed_topic_and_channel(focus_repo, src_repo, pub_repo, "topic_notifier_probe")
-    run = await CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker()).execute(
-        topic_id="topic_notifier_probe", channel_id="origins", actor_id="operator_alice"
-    )
+    run = await CreateRunUseCase(
+        exec_repo, focus_repo, FakeQueueBroker(), src_repo, pub_repo
+    ).execute(topic_id="topic_notifier_probe", channel_id="origins", actor_id="operator_alice")
 
     suspended = await runner.run_pipeline(run.id)
 

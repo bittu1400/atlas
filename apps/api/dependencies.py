@@ -109,8 +109,10 @@ def get_create_run_use_case(
     execution_repo: ExecutionRepository = Depends(get_execution_repository),
     focus_repo: FocusRepository = Depends(get_focus_repository),
     queue_broker: QueueBroker = Depends(get_queue_broker),
+    source_repo: SourceRepository = Depends(get_source_repository),
+    publishing_repo: PublishingRepository = Depends(get_publishing_repository),
 ) -> CreateRunUseCase:
-    return CreateRunUseCase(execution_repo, focus_repo, queue_broker)
+    return CreateRunUseCase(execution_repo, focus_repo, queue_broker, source_repo, publishing_repo)
 
 
 def get_approve_gate_use_case(

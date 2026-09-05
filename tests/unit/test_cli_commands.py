@@ -48,3 +48,14 @@ def test_cli_quota_status(db_session: object) -> None:  # noqa: ARG001
     assert result.exit_code == 0
     assert "System Status" in result.output
     assert "Provider Quota Status" in result.output
+
+
+def test_cli_exposes_the_catalogue_commands_a_run_depends_on() -> None:
+    """Defect V-15: a Run needs a Domain, a Topic and a Channel, and nothing could create one."""
+    top_level = runner.invoke(app, ["--help"])
+    assert top_level.exit_code == 0
+    for group in ("domain", "topic", "channel"):
+        assert group in top_level.output
+        group_help = runner.invoke(app, [group, "--help"])
+        assert group_help.exit_code == 0
+        assert "create" in group_help.output

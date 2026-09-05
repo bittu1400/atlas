@@ -219,7 +219,7 @@ async def test_every_evidence_quote_is_verbatim_in_its_snapshot(
     quota_mgr = QuotaManager(exec_repo)
 
     await _seed_prerequisites(focus_repo, src_repo, pub_repo, "chess_origins")
-    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker())
+    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker(), src_repo, pub_repo)
     run = await create_run_uc.execute(topic_id="chess_origins", channel_id="origins")
     step = Step(
         id="step_inv_01",
@@ -308,7 +308,7 @@ async def test_claim_is_not_verified_at_extraction_time(
     quota_mgr = QuotaManager(exec_repo)
 
     await _seed_prerequisites(focus_repo, src_repo, pub_repo, "chess_origins")
-    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker())
+    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker(), src_repo, pub_repo)
     run = await create_run_uc.execute(topic_id="chess_origins", channel_id="origins")
     step = Step(
         id="step_inv_02",
@@ -396,7 +396,7 @@ async def test_model_call_provenance_matches_the_adapter_that_ran(
     quota_mgr = QuotaManager(exec_repo)
 
     await _seed_prerequisites(focus_repo, src_repo, pub_repo, "chess_origins")
-    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker())
+    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker(), src_repo, pub_repo)
     run = await create_run_uc.execute(topic_id="chess_origins", channel_id="origins")
     step = Step(
         id="step_prov_01",
@@ -516,7 +516,7 @@ async def test_ai_generated_asset_cannot_be_used_without_approval(
         quota_mgr=QuotaManager(exec_repo),
     )
 
-    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker())
+    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker(), src_repo, pub_repo)
     approve_gate_uc = ApproveGateUseCase(exec_repo, FakeQueueBroker())
 
     run = await create_run_uc.execute(
@@ -612,7 +612,7 @@ async def test_ai_generated_asset_is_usable_once_a_human_approves_the_gate(
         quota_mgr=QuotaManager(exec_repo),
     )
 
-    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker())
+    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker(), src_repo, pub_repo)
     approve_gate_uc = ApproveGateUseCase(exec_repo, FakeQueueBroker())
     run = await create_run_uc.execute(
         topic_id="origin_of_ai_approved", channel_id="origins", actor_id="operator_alice"
@@ -675,7 +675,7 @@ async def test_rendered_artifact_derives_from_the_approved_script(
         quota_mgr=QuotaManager(exec_repo),
     )
 
-    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker())
+    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker(), src_repo, pub_repo)
     approve_gate_uc = ApproveGateUseCase(exec_repo, FakeQueueBroker())
 
     run = await create_run_uc.execute(
@@ -746,7 +746,7 @@ async def test_claim_with_no_evidence_ends_unsupported_and_not_in_script(
         quota_mgr=quota_mgr,
     )
 
-    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker())
+    create_run_uc = CreateRunUseCase(exec_repo, focus_repo, FakeQueueBroker(), src_repo, pub_repo)
     run = await create_run_uc.execute(topic_id="chess_origins", channel_id="origins")
 
     step_id = generate_id("step")

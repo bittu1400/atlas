@@ -13,6 +13,8 @@ from atlas.adapters.persistence.database import get_session_manager
 from atlas.platform.config import get_settings
 from atlas.platform.errors import (
     AtlasError,
+    ChannelNotFoundError,
+    DomainNotFoundError,
     GateAlreadyResolvedError,
     GateNotFoundError,
     InvalidStateTransitionError,
@@ -22,6 +24,7 @@ from atlas.platform.errors import (
     RunNotFoundError,
     StepExecutionError,
     StepNotFoundError,
+    TopicNotFoundError,
 )
 from atlas.platform.logging import get_logger
 from fastapi import FastAPI, Request, status
@@ -87,6 +90,42 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content={"error": "GateNotFoundError", "message": exc.message, "gate_id": exc.gate_id},
+        )
+
+    @app.exception_handler(TopicNotFoundError)
+    async def topic_not_found_handler(_request: Request, exc: TopicNotFoundError) -> JSONResponse:
+        """Defect V-16: without this, an unknown topic ID was a 500 from the FK."""
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "error": "TopicNotFoundError",
+                "message": exc.message,
+                "topic_id": exc.topic_id,
+            },
+        )
+
+    @app.exception_handler(ChannelNotFoundError)
+    async def channel_not_found_handler(
+        _request: Request, exc: ChannelNotFoundError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "error": "ChannelNotFoundError",
+                "message": exc.message,
+                "channel_id": exc.channel_id,
+            },
+        )
+
+    @app.exception_handler(DomainNotFoundError)
+    async def domain_not_found_handler(_request: Request, exc: DomainNotFoundError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "error": "DomainNotFoundError",
+                "message": exc.message,
+                "domain_id": exc.domain_id,
+            },
         )
 
     @app.exception_handler(GateAlreadyResolvedError)

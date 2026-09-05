@@ -545,6 +545,17 @@ findings in `docs/AUDIT-2026-08-29.md` §15.
 | `.github/workflows/ci.yml` | **Tree.** Playwright's install is filtered to `@atlas/web` (the binary is not at the root), and ffmpeg is installed so `test_production_adapters.py:148` runs instead of skipping. | D131, D133 |
 | `main` branch protection | **Repository settings.** Requires the `test` check; force pushes and deletions disabled; `enforce_admins` left false. Not a file in the tree, recorded here because §10 claims a deployment posture and this is part of it. | T-11, D132 |
 
+### 11.7e Structure changed on 2026-09-05
+
+| Item | Which side changed | Note |
+|---|---|---|
+| `application/usecases/create_domain.py`, `create_topic.py`, `create_channel.py` | **Tree.** Three new use cases, added because `save_domain`, `save_topic` and `save_channel` had no production caller at all — defect **V-15**. Each validates the foreign key it depends on before writing, rather than letting the constraint surface as an `IntegrityError`. | T-62, D136 |
+| `application/usecases/create_run.py` | **Tree.** `CreateRunUseCase` gains `source_repo` and `publishing_repo` and resolves the Topic and Channel before constructing the Run. Both entry points route through it, so one guard closes both. | T-63, D137 |
+| `platform/errors.py` | **Tree.** `TopicNotFoundError` (under `KnowledgeError`), `DomainNotFoundError` (under `FocusError`), and a new `PublishingError` base with `ChannelNotFoundError`. The file had no error type for any of the three. | T-63 |
+| `adapters/container.py` | **Tree.** `require_source_repo` and `require_publishing_repo`, matching the two `require_*` accessors that already existed. | T-62 |
+| `apps/cli/main.py` | **Tree.** Three new command groups — `atlas domain create`, `atlas topic create`, `atlas channel create`. **This makes §1's "full parity" claim false in the opposite direction:** the CLI can now create rows the HTTP API cannot, so the dashboard still cannot bootstrap itself. Recorded, not hidden — see **D136** and §11.8. | T-62, D136 |
+| `apps/api/main.py` | **Tree.** Three exception handlers returning 404 for the new error types. No route was added or changed, so **§2.1 is unaffected**. | T-63 |
+
 ### 11.8 Open structural items carried forward
 
 Everything above that is still open, in one list, so the next session does not have to re-derive it:

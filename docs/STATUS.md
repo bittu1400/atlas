@@ -1,6 +1,6 @@
 # Status
 
-**Last updated:** 2026-09-04 (CI green and blocking, T-20 closed, registers reconciled, V-14 found)
+**Last updated:** 2026-09-05 (V-15 and V-16 found by operating the system; T-62 and T-63 closed)
 **Branch:** `docs/audit-2026-08-29` — see §1.
 
 This file separates **decided** from **done**. Everything else in `docs/` records what Atlas *will*
@@ -14,30 +14,29 @@ current claim.
 
 ## 0. Measured baseline
 
-Measured on 2026-09-04, in the session that wrote this section, after the two CI fixes, the T-20
-timing-plan change, branch protection and the ffmpeg CI step. **Re-run them before quoting them**
-(**R7**).
+Measured on 2026-09-05, in the session that wrote this section, after the T-62 and T-63 changes.
+**Re-run them before quoting them** (**R7**).
 
 ```
 $ uv run ruff check .
 All checks passed!
 
 $ uv run mypy .
-Success: no issues found in 163 source files
+Success: no issues found in 168 source files
 
 $ uv run pytest --tb=short
-166 passed in 17.72s
+175 passed in 30.66s
 
 $ uv run pre-commit run --all-files
 Ruff Lint Check / Ruff Format Check / Anti-Fabrication Structural Guard — Passed
 
 $ pnpm test
-4 passed (2.5s) — apps/web/e2e/dashboard.spec.ts, Playwright Chromium
+4 passed (4.1s) — apps/web/e2e/dashboard.spec.ts, Playwright Chromium
 
 $ pnpm -r build
 packages/tokens · apps/renderer · apps/web — 3 of 3 built
 
-# 2026-09-04, same session:
+# 2026-09-05, same session:
 $ ls .../alembic/versions/*.py | grep -v __init__ | wc -l
 7 migrations on disk
 
@@ -48,18 +47,21 @@ $ uv run python -c "from apps.api.main import app; print(len(app.openapi()['path
 11 paths, 12 operations — transcribed in ARCHITECTURE §2.1
 ```
 
-`alembic upgrade head` was **not** re-run against a fresh `atlas` database this session; the 7 and the
-30 above are counted from the migration files and from `Base.metadata`, which is a weaker measurement
-than the previous session's and is written down as such rather than carried forward as if it were the
-same command (**R7**). CI runs the real `alembic upgrade head` on every push and it passed.
+`alembic upgrade head` **was** run against the `atlas` database this session — it is how the API and
+the dashboard were brought up, and it is where `topics` was found empty (defect **V-15**). The 7 and
+the 30 above are still counted from the migration files and from `Base.metadata` rather than from a
+fresh apply, which is a weaker measurement, and is written down as such rather than carried forward
+as if it were the stronger command (**R7**). CI runs the real `alembic upgrade head` on every push.
 
 There are no `xfail` markers in the suite, and as of 2026-09-04 there are **no skips in CI either**:
 `test_production_adapters.py:148` needs ffmpeg, the runner image has none, and `ci.yml` now installs
 it (**D133**). Before that step, the only test that shells out to real ffmpeg passed locally and
 skipped on the runner — a green CI that did not cover the renderer path.
 
-**The count moved by three**, all of them the T-20 tests in
-`tests/unit/test_timing_plan_duration.py`. The lesson attached to these numbers is older and still
+**The count moved by nine**: three unit tests and one CLI-surface test for T-62/T-63, plus two HTTP
+tests and three integration tests driving the operator's Domain → Topic → Channel → Run sequence
+against the real schema. The mypy file count moved by five — three new use cases and two new test
+modules. The lesson attached to these numbers is older and still
 stands: on 2026-08-31 the three headline numbers held while the claim they were taken to support did
 not. The suite exercises the pipeline **against fakes**, and until that day no test constructed
 `Container` or called any adapter it wires except `LocalStorage`. The first production adapter substituted into a real Run — `LoggingNotifier` — raised
@@ -100,10 +102,18 @@ new information. Recorded rather than ticked silently.
 
 ## 1. Working tree state
 
-Clean on branch `docs/audit-2026-08-29`. The most recent behavioural commit is the T-20 timing-plan
-change, preceded by the two CI fixes, the ffmpeg CI step, the T-22 topic title resolution, the T-55
-Playwright browser test suite, the V-01 – V-12 remediation, and the documentation reconciliation that
-found **V-13** and deliberately left it to task **T-60** (**D125**).
+Clean on branch `docs/audit-2026-08-29`. The most recent behavioural commit is the T-62/T-63
+remediation — the three catalogue CLI commands and the Topic and Channel guard in `CreateRunUseCase`
+— preceded by the commit recording defects **V-15** and **V-16**, the T-20 timing-plan change, the
+two CI fixes, the ffmpeg CI step, the T-22 topic title resolution, the T-55 Playwright browser test
+suite, the V-01 – V-12 remediation, and the reconciliation that found **V-13** and left it to task
+**T-60** (**D125**).
+
+**One row was written to the local `atlas` application database by hand this session** — the
+`topic_origin_of_weapons` Topic, created through the new CLI command to verify the fix on the machine
+where the defect appeared. Its Domain (`dom_history`) and Channel (`origins`) already existed there
+as residue from before the incident quarantine. Additive only; nothing was deleted or edited
+(**R11**).
 
 **One change this session is not in the tree at all:** branch protection on `main` is a repository
 setting, not a file. `ARCHITECTURE.md` §10 and §11.7d record it, because a deployment posture that
@@ -146,6 +156,20 @@ via Playwright** (task **T-55**, **ADR-0018**): `apps/web/e2e/dashboard.spec.ts`
 asserting that the dashboard renders live API topic IDs, gate step IDs, error banners on failed actions,
 and real snapshot hashes without fixtures.
 
+
+**An operator can create the rows a Run needs, and a bad ID fails as a typed 404 (T-62, T-63,
+D136–D137).** `atlas domain create`, `atlas topic create` and `atlas channel create` are the first
+production callers `save_domain`, `save_topic` and `save_channel` have ever had; before them, `topics`
+was empty in any database a test had not seeded and `POST /runs` violated its foreign key for every
+input, returning a 500 with the SQL in the log (defects **V-15** and **V-16**).
+`CreateRunUseCase` now resolves the Topic and the Channel before it constructs the Run, so both
+entry points fail with `TopicNotFoundError` / `ChannelNotFoundError` rather than an untyped
+`IntegrityError`. `tests/integration/test_run_creation_prerequisites.py` drives Domain → Topic →
+Channel → Run through the shipped use cases with no fixture in the chain and asserts all four rows;
+two HTTP tests assert the 404 bodies. Verified by hand against the running server that produced the
+original 500. **What this does not do** is give the dashboard the same ability — the three commands
+have no HTTP route, so an operator must use the terminal once (**T-64**), which makes SPEC §1's
+"full CLI parity" claim false in the CLI's favour.
 
 **A Timing Plan can no longer overstate its own duration (T-20, D129).**
 `TimingPlan.total_duration_seconds` was a plain field defaulting to `60.0`; a plan carrying 3.5
@@ -262,16 +286,13 @@ a feature.
   `gate.metadata` field the API does not return, and were deleted with the rest of **V-03**. Bringing
   them back means endpoints that return an approved Run's asset candidates, script beats and quality
   report — not fixtures (**D111**, audit §15.7).
-- **Any way for an operator to create a Domain, a Topic or a Channel — and therefore any way to
-  create a Run.** `save_topic`, `save_domain` and `save_channel` have no caller outside `tests/`:
-  there are no `POST /topics`, `/domains` or `/channels` routes, no matching `atlas` commands, and
-  stage 1 discards the ideas it discovers (`IDEA_DISCOVERY` returns
-  `ideas_count_N` and saves nothing). `topics` is empty in any database a test did not seed, so
-  `POST /runs` violates `runs_topic_id_fkey` for every input, and does so as an untyped
-  `IntegrityError` that reaches the catch-all handler as a 500. **The dashboard's only write path
-  cannot succeed today.** Found 2026-09-05 by bringing the API and dashboard up and pressing the
-  button; defects **V-15** and **V-16**, tasks **T-62** and **T-63**, audit §17. The dashboard
-  reported the failure honestly rather than inventing a Run, which is **R13** holding.
+- **Any way to create a Domain, a Topic or a Channel from the browser.** The CLI can (T-62), the
+  API cannot, so the dashboard cannot bootstrap itself from an empty database: an operator has to
+  open a terminal once before the "Launch a Run" form can succeed. **T-64**, SPEC §17.11.
+- **A Topic that stage 1 proposes reaching the database.** `IDEA_DISCOVERY` calls the agent, counts
+  the result and returns `ideas_count_N`; the proposed ideas are discarded. Whether a model-proposed
+  Topic may be persisted before a human has seen it is an Invariant-2 question and is deliberately
+  left open — route (c) of **T-62**, **D136**.
 - **A real-provider run.** `docker compose up` now builds, but no Run has ever executed against
   Gemini, Ollama or Freesound end to end. **T-34**, still sequenced after T-29 and T-30.
 - **Timing that fits a target duration.** ADR-0006 §2 promises the Timing Plan solves per-Beat hold
@@ -339,6 +360,11 @@ These are real and are not being hidden; each is recorded with the decision that
   fixed, because the two honest routes — implement ADR-0006 §2, or supersede it and constrain the
   prompt's *sum* — are both behaviour changes with a design decision inside them, and a documentation
   session does not quietly change behaviour (**D106**, **D125** precedent). **D134**, task **T-61**.
+- **The CLI prints a rich traceback for a domain error.** Every command lets `AtlasError` reach
+  Typer; `atlas run status run_absent` and `atlas topic create --domain dom_absent` behave
+  identically, both exiting 1 with the error type named. Nothing is hidden — this is presentation,
+  and it is uniform, so it is one decision about all commands rather than three fixes to the new
+  ones. **T-65**, **D138**.
 - **The approval screen shows Gate rows and nothing else.** An operator can see which Gate is
   pending and open the Run's Knowledge Object and telemetry, but cannot review asset candidates,
   script beats or the quality report in place — §3, **D111**.
@@ -347,23 +373,28 @@ These are real and are not being hidden; each is recorded with the decision that
 
 ## 5. Where to look next
 
-**Read order for the next session:** this file → `docs/AUDIT-2026-08-29.md` **§16** (the 2026-09-04
-session; short, and it carries the new defect **V-14**) → **§15** (what the second 2026-08-31
+**Read order for the next session:** this file → `docs/AUDIT-2026-08-29.md` **§17** (the 2026-09-05
+session; defects **V-15** and **V-16**, both found by using the system rather than by reading the
+register) → **§16** (the 2026-09-04 session; it carries defect **V-14**) → **§15** (what the second 2026-08-31
 verification found; **§15.9** is the live ordered work list, kept current, and **§15.8** is what not
-to do) → §14 and §13 for the sessions before → `docs/SPEC.md` §17 (**§17.10** is newest) →
+to do) → §14 and §13 for the sessions before → `docs/SPEC.md` §17 (**§17.11** is newest) →
 `docs/ARCHITECTURE.md` **§2.1** (the HTTP surface — the contract the dashboard codes against) and §11
-(**§11.7d** is newest) → the relevant ADR → the code.
+(**§11.7e** is newest) → the relevant ADR → the code.
 
 `docs/AUDIT-2026-08-29.md` is the authoritative register of what is broken. **§15.9 supersedes §14.2**
 as the ordered list. Its first three, in short:
 
-1. **T-61 — fit the Timing Plan, or amend ADR-0006.** New this session (defect **V-14**). The plan
+1. **T-61 — fit the Timing Plan, or amend ADR-0006.** Defect **V-14**, found 2026-09-04. The plan
    accumulates where the ADR promises fitting; prompt-compliant scripts span 36–81 s against a
    58–62 s gate with no repair path. **Do this before T-34** — the first real-provider run is exactly
-   where that spread meets that gate, on a 20-request daily budget.
+   where that spread meets that gate, on a 20-request daily budget. It was displaced by T-62 and
+   T-63 on 2026-09-05 for the reason **D135** records: it is a defect inside a Run that no operator
+   could start.
 2. **T-53 — the unreachable gate-stage branch.** Decide and document.
 3. **T-57 — consistent auth dependency on the API.** Two routes are missing `verify_api_key` —
    `GET /runs/{id}/steps` and `GET /runs/{id}/gates`, verified route by route on 2026-09-04.
+4. **T-64 — HTTP equivalents for the three catalogue commands.** New 2026-09-05; until it lands the
+   dashboard cannot bootstrap itself.
 
 **Do not start T-34** (the honest real-provider run) before **T-29**, **T-30** and now **T-58**. The
 Gemini free tier allows 20 requests a day and a correct run needs 6–9; that scarcity is the direct
@@ -386,7 +417,12 @@ second session.
 - **No verification pass.** The registers were reconciled against the code — narrower than audit
   §15's re-measurement, which was not repeated. `ARCHITECTURE.md` §2.1 *was* re-checked against
   `app.openapi()` route by route, including the auth column.
-- **V-14 was found, not fixed.** See §4 and **D134**.
+- **V-14 was found, not fixed.** See §4 and **D134**. It is still task **T-61**, still first.
+- **No Run was created against real providers**, deliberately. The Topic that was created by hand
+  makes `POST /runs` succeed now, and succeeding means stage 1 spends Gemini quota — that is
+  **T-34**, and it stays sequenced behind T-29, T-30 and T-58.
+- **No HTTP route was added or changed**, so `ARCHITECTURE.md` §2.1 is untouched and still lists 11
+  paths / 12 operations. Only exception handlers were added.
 - **CI is blocking but not unbypassable.** `enforce_admins` is false; an administrator can override
   the required check.
 

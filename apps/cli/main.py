@@ -17,7 +17,10 @@ from atlas.adapters.persistence.database import get_session_manager, reset_sessi
 from atlas.adapters.persistence.repositories.execution_repository import ExecutionRepository
 from atlas.adapters.persistence.repositories.focus_repository import FocusRepository
 from atlas.application.usecases.approve_gate import ApproveGateUseCase
+from atlas.application.usecases.create_channel import CreateChannelUseCase
+from atlas.application.usecases.create_domain import CreateDomainUseCase
 from atlas.application.usecases.create_run import CreateRunUseCase
+from atlas.application.usecases.create_topic import CreateTopicUseCase
 from atlas.application.usecases.get_run_status import (
     GetQuotaStatusUseCase,
     GetRunStatusUseCase,
@@ -41,10 +44,16 @@ gate_app = typer.Typer(
     name="gate", help="Manage suspension Gates and Approvals", no_args_is_help=True
 )
 quota_app = typer.Typer(name="quota", help="Inspect provider quota status", no_args_is_help=True)
+domain_app = typer.Typer(name="domain", help="Manage research Domains", no_args_is_help=True)
+topic_app = typer.Typer(name="topic", help="Manage Topics", no_args_is_help=True)
+channel_app = typer.Typer(name="channel", help="Manage publishing Channels", no_args_is_help=True)
 
 app.add_typer(run_app)
 app.add_typer(gate_app)
 app.add_typer(quota_app)
+app.add_typer(domain_app)
+app.add_typer(topic_app)
+app.add_typer(channel_app)
 
 console = Console()
 
@@ -99,7 +108,13 @@ def create_run_cmd(
         async with _managed_cli_context() as (container, exec_repo, focus_repo):
             runner = container.get_pipeline_runner()
             queue_broker = Container().queue_broker
-            use_case = CreateRunUseCase(exec_repo, focus_repo, queue_broker)
+            use_case = CreateRunUseCase(
+                exec_repo,
+                focus_repo,
+                queue_broker,
+                container.require_source_repo(),
+                container.require_publishing_repo(),
+            )
 
             run = await use_case.execute(
                 topic_id=topic_id,
@@ -312,6 +327,78 @@ def reject_gate_cmd(
                 console.print(
                     f"[blue]Run state after rework advance:[/blue] [bold]{updated_run.status.value}[/bold]"
                 )
+
+    asyncio.run(_run())
+
+
+# =============================================================================
+# Catalogue Commands — the rows a Run needs before it can exist
+#
+# Defect V-15: `save_domain`, `save_topic` and `save_channel` had no production
+# caller at all, so a Run could only be created against a database some test had
+# seeded. These are the operator's way in.
+# =============================================================================
+
+
+@domain_app.command("create")
+def create_domain_cmd(
+    domain_id: str = typer.Argument(..., help="Unique Domain ID (e.g. dom_history)"),
+    name: str = typer.Option(..., "--name", "-n", help="Display name (e.g. History)"),
+    description: str = typer.Option(..., "--description", "-d", help="Coverage description"),
+) -> None:
+    """Register a research Domain."""
+
+    async def _run() -> None:
+        async with _managed_cli_context() as (_container, _exec_repo, focus_repo):
+            domain = await CreateDomainUseCase(focus_repo).execute(
+                domain_id=domain_id, name=name, description=description
+            )
+            console.print(f"[green]\u2713 Domain created:[/green] [bold]{domain.id}[/bold]")
+
+    asyncio.run(_run())
+
+
+@topic_app.command("create")
+def create_topic_cmd(
+    topic_id: str = typer.Argument(..., help="Unique Topic ID (e.g. topic_origin_of_chess)"),
+    title: str = typer.Option(..., "--title", "-t", help="Human-readable Topic title"),
+    domain_id: str = typer.Option(..., "--domain", "-D", help="Existing Domain ID"),
+    entity_id: str | None = typer.Option(None, "--entity", "-e", help="Wikidata QID, if known"),
+) -> None:
+    """Register a Topic against an existing Domain."""
+
+    async def _run() -> None:
+        async with _managed_cli_context() as (container, _exec_repo, focus_repo):
+            topic = await CreateTopicUseCase(container.require_source_repo(), focus_repo).execute(
+                topic_id=topic_id, title=title, domain_id=domain_id, entity_id=entity_id
+            )
+            console.print(
+                f"[green]\u2713 Topic created:[/green] [bold]{topic.id}[/bold] "
+                f"(Status: {topic.status.value})"
+            )
+
+    asyncio.run(_run())
+
+
+@channel_app.command("create")
+def create_channel_cmd(
+    channel_id: str = typer.Argument(..., help="Unique Channel ID (e.g. origins)"),
+    name: str = typer.Option(..., "--name", "-n", help="Display name"),
+    audience_timezone: str = typer.Option(
+        "America/New_York", "--timezone", "-z", help="IANA timezone of the Channel's audience"
+    ),
+) -> None:
+    """Register a publishing Channel."""
+
+    async def _run() -> None:
+        async with _managed_cli_context() as (container, _exec_repo, _focus_repo):
+            channel = await CreateChannelUseCase(container.require_publishing_repo()).execute(
+                channel_id=channel_id, name=name, audience_timezone=audience_timezone
+            )
+            console.print(
+                f"[green]\u2713 Channel created:[/green] [bold]{channel.id}[/bold] "
+                f"({channel.audience_timezone})"
+            )
 
     asyncio.run(_run())
 
