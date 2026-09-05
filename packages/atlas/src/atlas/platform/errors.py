@@ -13,6 +13,25 @@ class AtlasError(Exception):
         self.message = message
 
 
+class DuplicateEntityError(AtlasError):
+    """Raised when a create operation targets an ID that already exists.
+
+    `save_domain`, `save_topic` and `save_channel` are upserts, and the create
+    use cases default every field the caller did not name. Without this guard,
+    `atlas domain create` against an existing ID silently replaced a Research
+    Profile with the empty default — which on 2026-09-05 weakened a real
+    Domain's `source_tier_floor` from `primary` to `institutional`.
+    """
+
+    def __init__(self, entity_type: str, entity_id: str) -> None:
+        super().__init__(
+            f"{entity_type} '{entity_id}' already exists; "
+            f"create refuses to overwrite an existing row"
+        )
+        self.entity_type = entity_type
+        self.entity_id = entity_id
+
+
 class KnowledgeError(AtlasError):
     """Base error for knowledge management and traceability operations."""
 

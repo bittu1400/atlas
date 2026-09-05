@@ -6,6 +6,7 @@ Domain — the row a Topic hangs off — could only be created by a test fixture
 
 from atlas.application.ports.repositories import FocusRepositoryPort
 from atlas.domain.focus.models import Domain, ResearchProfile
+from atlas.platform.errors import DuplicateEntityError
 from atlas.platform.logging import get_logger
 
 logger = get_logger("usecases.create_domain")
@@ -30,6 +31,9 @@ class CreateDomainUseCase:
         defaults `source_tier_floor` to `INSTITUTIONAL`, so a Domain created
         without one still carries the tier floor rather than none.
         """
+        if await self.focus_repo.get_domain(domain_id) is not None:
+            raise DuplicateEntityError("Domain", domain_id)
+
         domain = Domain(
             id=domain_id,
             name=name,

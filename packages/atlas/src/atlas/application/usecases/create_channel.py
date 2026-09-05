@@ -9,6 +9,7 @@ from typing import Any
 from atlas.application.ports.repositories import PublishingRepositoryPort
 from atlas.domain.publishing.models import Channel
 from atlas.platform.clock import utc_now
+from atlas.platform.errors import DuplicateEntityError
 from atlas.platform.logging import get_logger
 
 logger = get_logger("usecases.create_channel")
@@ -28,6 +29,9 @@ class CreateChannelUseCase:
         style_profile: dict[str, Any] | None = None,
     ) -> Channel:
         """Register a Channel with its audience clock and Style Profile."""
+        if await self.publishing_repo.get_channel(channel_id) is not None:
+            raise DuplicateEntityError("Channel", channel_id)
+
         channel = Channel(
             id=channel_id,
             name=name,

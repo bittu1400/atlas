@@ -18,8 +18,13 @@ from atlas.application.usecases.create_domain import CreateDomainUseCase
 from atlas.application.usecases.create_run import CreateRunUseCase
 from atlas.application.usecases.create_topic import CreateTopicUseCase
 from atlas.domain.execution.models import RunStatus
+from atlas.domain.focus.models import ResearchProfile
 from atlas.domain.knowledge.models import TopicStatus
-from atlas.platform.errors import DomainNotFoundError, TopicNotFoundError
+from atlas.platform.errors import (
+    DomainNotFoundError,
+    DuplicateEntityError,
+    TopicNotFoundError,
+)
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -118,3 +123,58 @@ async def test_creating_a_run_for_an_unknown_topic_raises_before_the_flush(
 
     count = (await db_session.execute(text("SELECT count(*) FROM runs"))).scalar_one()
     assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_create_refuses_to_overwrite_an_existing_row(db_session: AsyncSession) -> None:
+    """A command named `create` must never silently replace configuration.
+
+    `save_domain`, `save_topic` and `save_channel` are upserts, and the use
+    cases default every field the caller did not name. On 2026-09-05 that
+    combination overwrote a real Domain's Research Profile — dropping its
+    source allowlist and weakening `source_tier_floor` from `primary` to
+    `institutional` — and blanked a real Channel's Style Profile, because the
+    operator ran `create` against IDs that already existed.
+    """
+    focus_repo = FocusRepository(db_session)
+    source_repo = SourceRepository(db_session)
+    publishing_repo = PublishingRepository(db_session)
+
+    await CreateDomainUseCase(focus_repo).execute(
+        domain_id=DOMAIN_ID,
+        name="PLACEHOLDER_DOMAIN_NAME",
+        description="PLACEHOLDER_DOMAIN_DESCRIPTION",
+        research_profile=ResearchProfile(source_allowlist=["*.placeholder.invalid"]),
+    )
+    await CreateTopicUseCase(source_repo, focus_repo).execute(
+        topic_id=TOPIC_ID, title="PLACEHOLDER_TOPIC_TITLE", domain_id=DOMAIN_ID
+    )
+    await CreateChannelUseCase(publishing_repo).execute(
+        channel_id=CHANNEL_ID, name="PLACEHOLDER_CHANNEL_NAME", style_profile={"tone": "archival"}
+    )
+
+    with pytest.raises(DuplicateEntityError) as domain_err:
+        await CreateDomainUseCase(focus_repo).execute(
+            domain_id=DOMAIN_ID, name="OTHER", description="OTHER"
+        )
+    assert domain_err.value.entity_id == DOMAIN_ID
+
+    with pytest.raises(DuplicateEntityError):
+        await CreateTopicUseCase(source_repo, focus_repo).execute(
+            topic_id=TOPIC_ID, title="OTHER", domain_id=DOMAIN_ID
+        )
+
+    with pytest.raises(DuplicateEntityError):
+        await CreateChannelUseCase(publishing_repo).execute(channel_id=CHANNEL_ID, name="OTHER")
+
+    # The originals are untouched: no field was defaulted over.
+    domain = await focus_repo.get_domain(DOMAIN_ID)
+    assert domain is not None
+    assert domain.name == "PLACEHOLDER_DOMAIN_NAME"
+    assert domain.research_profile.source_allowlist == ["*.placeholder.invalid"]
+    channel = await publishing_repo.get_channel(CHANNEL_ID)
+    assert channel is not None
+    assert channel.style_profile == {"tone": "archival"}
+    topic = await source_repo.get_topic(TOPIC_ID)
+    assert topic is not None
+    assert topic.title == "PLACEHOLDER_TOPIC_TITLE"

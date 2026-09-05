@@ -8,7 +8,7 @@ creation failed its foreign key.
 from atlas.application.ports.repositories import FocusRepositoryPort, SourceRepositoryPort
 from atlas.domain.knowledge.models import Topic, TopicStatus
 from atlas.platform.clock import utc_now
-from atlas.platform.errors import DomainNotFoundError
+from atlas.platform.errors import DomainNotFoundError, DuplicateEntityError
 from atlas.platform.logging import get_logger
 
 logger = get_logger("usecases.create_topic")
@@ -37,6 +37,8 @@ class CreateTopicUseCase:
         """
         if await self.focus_repo.get_domain(domain_id) is None:
             raise DomainNotFoundError(domain_id)
+        if await self.source_repo.get_topic(topic_id) is not None:
+            raise DuplicateEntityError("Topic", topic_id)
 
         topic = Topic(
             id=topic_id,
