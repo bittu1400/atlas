@@ -1,6 +1,6 @@
 # Status
 
-**Last updated:** 2026-09-05 (V-15 and V-16 found by operating the system; T-62 and T-63 closed)
+**Last updated:** 2026-09-05 (V-15 – V-19 found by operating the system; T-62, T-63, T-64 and T-66 closed)
 **Branch:** `docs/audit-2026-08-29` — see §1.
 
 This file separates **decided** from **done**. Everything else in `docs/` records what Atlas *will*
@@ -14,7 +14,7 @@ current claim.
 
 ## 0. Measured baseline
 
-Measured on 2026-09-05, in the session that wrote this section, after the T-62 and T-63 changes.
+Measured on 2026-09-05, in the session that wrote this section, after the T-62, T-63, T-64 and V-18 changes.
 **Re-run them before quoting them** (**R7**).
 
 ```
@@ -22,16 +22,16 @@ $ uv run ruff check .
 All checks passed!
 
 $ uv run mypy .
-Success: no issues found in 168 source files
+Success: no issues found in 179 source files
 
 $ uv run pytest --tb=short
-175 passed in 30.66s
+191 passed in 21.63s
 
 $ uv run pre-commit run --all-files
 Ruff Lint Check / Ruff Format Check / Anti-Fabrication Structural Guard — Passed
 
 $ pnpm test
-4 passed (4.1s) — apps/web/e2e/dashboard.spec.ts, Playwright Chromium
+10 passed (4.3s) — apps/web/e2e/dashboard.spec.ts, Playwright Chromium
 
 $ pnpm -r build
 packages/tokens · apps/renderer · apps/web — 3 of 3 built
@@ -44,7 +44,7 @@ $ uv run python -c "from atlas.adapters.persistence.tables import Base; print(le
 30 tables
 
 $ uv run python -c "from apps.api.main import app; print(len(app.openapi()['paths']))"
-11 paths, 12 operations — transcribed in ARCHITECTURE §2.1
+15 paths, 20 operations — transcribed in ARCHITECTURE §2.1
 ```
 
 `alembic upgrade head` **was** run against the `atlas` database this session — it is how the API and
@@ -58,10 +58,12 @@ There are no `xfail` markers in the suite, and as of 2026-09-04 there are **no s
 it (**D133**). Before that step, the only test that shells out to real ffmpeg passed locally and
 skipped on the runner — a green CI that did not cover the renderer path.
 
-**The count moved by nine**: three unit tests and one CLI-surface test for T-62/T-63, plus two HTTP
-tests and three integration tests driving the operator's Domain → Topic → Channel → Run sequence
-against the real schema. The mypy file count moved by five — three new use cases and two new test
-modules. The lesson attached to these numbers is older and still
+**The Python count moved by twenty-five and the browser count by six.** T-62 and T-63 brought unit
+tests for the Run guard, a CLI-surface test and the Domain → Topic → Channel → Run sequence against
+the real schema; T-64 brought eight HTTP tests over the new routes, four repository-listing tests,
+and six browser assertions over the pickers, the Catalog and the Pipeline tab; V-18 brought three
+that call the broker the production container actually resolves. The HTTP surface moved from 11
+paths / 12 operations to **15 / 20**. The lesson attached to these numbers is older and still
 stands: on 2026-08-31 the three headline numbers held while the claim they were taken to support did
 not. The suite exercises the pipeline **against fakes**, and until that day no test constructed
 `Container` or called any adapter it wires except `LocalStorage`. The first production adapter substituted into a real Run — `LoggingNotifier` — raised
@@ -102,16 +104,19 @@ new information. Recorded rather than ticked silently.
 
 ## 1. Working tree state
 
-Clean on branch `docs/audit-2026-08-29`. The most recent behavioural commit is the T-62/T-63
-remediation — the three catalogue CLI commands and the Topic and Channel guard in `CreateRunUseCase`
-— preceded by the commit recording defects **V-15** and **V-16**, the T-20 timing-plan change, the
+Clean on branch `docs/audit-2026-08-29`. The most recent behavioural commit is the **V-18** queue
+fix, preceded by the T-64 dashboard work (Catalog and Pipeline tabs, eight routes, four repository
+listings), the V-17 duplicate guard, the T-62/T-63 remediation, the commit recording **V-15** and
+**V-16**, the T-20 timing-plan change, the
 two CI fixes, the ffmpeg CI step, the T-22 topic title resolution, the T-55 Playwright browser test
 suite, the V-01 – V-12 remediation, and the reconciliation that found **V-13** and left it to task
 **T-60** (**D125**).
 
-**One row was written to the local `atlas` application database by hand this session** — the
+**Rows were written to the local `atlas` application database by hand this session.** The
 `topic_origin_of_weapons` Topic, created through the new CLI command to verify the fix on the machine
-where the defect appeared. Its Domain (`dom_history`) and Channel (`origins`) already existed there
+where the defect appeared — and then `dom_history` and `origins` were **overwritten** by that same
+command before it refused duplicates (defect **V-17**) and **restored** from the migration seed under
+task **T-66**, with the damaged and restored values recorded in the audit. Its Domain (`dom_history`) and Channel (`origins`) already existed there
 from migration `0001_initial_schema`, which seeds four Domains and three Channels — an earlier
 sentence in audit §17.3 called those rows residue and is corrected there. Additive only; nothing was
 deleted or edited (**R11**).
