@@ -52,6 +52,9 @@ class InMemorySourceRepository(SourceRepositoryPort):
     async def get_topic(self, topic_id: str) -> Topic | None:
         return self.topics.get(topic_id)
 
+    async def list_topics(self) -> list[Topic]:
+        return sorted(self.topics.values(), key=lambda t: (t.created_at, t.id), reverse=True)
+
     async def save_source(self, source: Source) -> Source:
         self.sources[source.id] = source
         return source

@@ -46,8 +46,18 @@ class PublishingRepository:
     async def get_channel(self, channel_id: str) -> Channel | None:
         """Fetch Channel by ID."""
         row = await self.session.get(ChannelTable, channel_id)
-        if not row:
-            return None
+        return self._to_channel(row) if row else None
+
+    async def list_channels(self) -> list[Channel]:
+        """List every Channel, by ID, for an operator choosing where a Run publishes."""
+        rows = (
+            await self.session.execute(select(ChannelTable).order_by(ChannelTable.id))
+        ).scalars()
+        return [self._to_channel(row) for row in rows]
+
+    @staticmethod
+    def _to_channel(row: ChannelTable) -> Channel:
+        """Map one row, in one place, so the single fetch and the listing cannot drift."""
         return Channel(
             id=row.id,
             name=row.name,

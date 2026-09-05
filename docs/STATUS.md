@@ -112,8 +112,9 @@ suite, the V-01 – V-12 remediation, and the reconciliation that found **V-13**
 **One row was written to the local `atlas` application database by hand this session** — the
 `topic_origin_of_weapons` Topic, created through the new CLI command to verify the fix on the machine
 where the defect appeared. Its Domain (`dom_history`) and Channel (`origins`) already existed there
-as residue from before the incident quarantine. Additive only; nothing was deleted or edited
-(**R11**).
+from migration `0001_initial_schema`, which seeds four Domains and three Channels — an earlier
+sentence in audit §17.3 called those rows residue and is corrected there. Additive only; nothing was
+deleted or edited (**R11**).
 
 **One change this session is not in the tree at all:** branch protection on `main` is a repository
 setting, not a file. `ARCHITECTURE.md` §10 and §11.7d record it, because a deployment posture that

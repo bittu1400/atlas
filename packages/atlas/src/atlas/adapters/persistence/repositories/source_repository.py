@@ -68,8 +68,20 @@ class SourceRepository:
     async def get_topic(self, topic_id: str) -> Topic | None:
         """Fetch Topic by ID."""
         row = await self.session.get(TopicTable, topic_id)
-        if not row:
-            return None
+        return self._to_topic(row) if row else None
+
+    async def list_topics(self) -> list[Topic]:
+        """List every Topic, newest first — the one just created is the one to launch."""
+        rows = (
+            await self.session.execute(
+                select(TopicTable).order_by(TopicTable.created_at.desc(), TopicTable.id)
+            )
+        ).scalars()
+        return [self._to_topic(row) for row in rows]
+
+    @staticmethod
+    def _to_topic(row: TopicTable) -> Topic:
+        """Map one row, in one place, so the single fetch and the listing cannot drift."""
         return Topic(
             id=row.id,
             title=row.title,
