@@ -122,7 +122,7 @@ quota accounting. If something lands there that has business meaning, it belongs
 
 ## 2.1 The HTTP surface
 
-Transcribed from `app.openapi()` on 2026-08-31. **This table is the contract the dashboard codes
+Transcribed from `app.openapi()` on 2026-09-05 — **15 paths, 20 operations**. **This table is the contract the dashboard codes
 against.** It exists because no document previously stated the API surface, and the dashboard
 consequently invented one: its wire types declared `RunItem.current_stage`, `GateItem.stage`,
 `GateItem.metadata` and a gate status of `'open'`, none of which exist, and it called `/gates`, which
@@ -142,10 +142,24 @@ is not a route (defect **V-03**). If you change a route, change this table in th
 | `POST` | `/gates/{gate_id}/approve` | `ApproveGateRequest` — `actor_id` | `ApprovalResponse`; resumes the Run | `verify_api_key` |
 | `POST` | `/gates/{gate_id}/reject` | `RejectGateRequest` — `target_ref`, `rubric_dimension`, `reason`, `action`, `actor_id`, all required (SPEC §7) | `ApprovalResponse` | `verify_api_key` |
 | `GET` | `/quota` | — | `QuotaStatusResponse` — per provider, computed from `quota_ledger` | `verify_api_key` |
+| `GET` | `/domains` | — | `list[DomainResponse]` — by ID, Research Profile included | `verify_api_key` |
+| `POST` | `/domains` | `CreateDomainRequest` — `id`, `name`, `description` | `DomainResponse` · 201; **409** if the ID exists | `verify_api_key` |
+| `GET` | `/topics` | — | `list[TopicResponse]` — newest first | `verify_api_key` |
+| `POST` | `/topics` | `CreateTopicRequest` — `id`, `title`, `domain_id`, `entity_id?` | `TopicResponse` · 201; **404** unknown Domain, **409** duplicate ID | `verify_api_key` |
+| `GET` | `/channels` | — | `list[ChannelResponse]` — by ID, Style Profile included | `verify_api_key` |
+| `POST` | `/channels` | `CreateChannelRequest` — `id`, `name`, `audience_timezone`, `style_profile` | `ChannelResponse` · 201; **409** if the ID exists | `verify_api_key` |
+| `GET` | `/focuses` | — | `list[FocusListing]` — newest first, each flagged `is_active` | `verify_api_key` |
+| `POST` | `/focuses` | `CreateFocusRequest` — `name`, `facets`, `scope_mode`, `entity_id?`, `actor_id`; **no `id`** | `FocusListing` · 201; does **not** become the Active Focus | `verify_api_key` |
 
-Response models live in `apps/api/schemas.py`, except `RunKnowledgeView` and `TelemetryEvent`, which
-are the application-layer view models returned by `application/usecases/inspect_run.py` and are used
-directly as `response_model` rather than re-declared — one shape, not two.
+Response models live in `apps/api/schemas.py`, except `RunKnowledgeView`, `TelemetryEvent` and
+`FocusListing`, which are the application-layer view models returned by
+`application/usecases/inspect_run.py` and `application/usecases/list_run_prerequisites.py` and are
+used directly as `response_model` rather than re-declared — one shape, not two.
+
+**The nine rows below `/quota` were added on 2026-09-05 (T-64).** Before them the dashboard could not
+name a single Topic, Channel or Focus, so its Launch form was three free-text boxes over IDs only the
+terminal could reveal. `POST /focuses` takes no `id` because a Focus is immutable and versioned by
+creation; the other three take one because an operator names them.
 
 Two things this table records honestly:
 

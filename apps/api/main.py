@@ -15,6 +15,7 @@ from atlas.platform.errors import (
     AtlasError,
     ChannelNotFoundError,
     DomainNotFoundError,
+    DuplicateEntityError,
     GateAlreadyResolvedError,
     GateNotFoundError,
     InvalidStateTransitionError,
@@ -31,10 +32,14 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from apps.api.routes.channels import router as channels_router
+from apps.api.routes.domains import router as domains_router
+from apps.api.routes.focuses import router as focuses_router
 from apps.api.routes.gates import router as gates_router
 from apps.api.routes.health import router as health_router
 from apps.api.routes.quota import router as quota_router
 from apps.api.routes.runs import router as runs_router
+from apps.api.routes.topics import router as topics_router
 
 logger = get_logger("apps.api")
 
@@ -90,6 +95,21 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content={"error": "GateNotFoundError", "message": exc.message, "gate_id": exc.gate_id},
+        )
+
+    @app.exception_handler(DuplicateEntityError)
+    async def duplicate_entity_handler(
+        _request: Request, exc: DuplicateEntityError
+    ) -> JSONResponse:
+        """Defect V-17: `create` used to overwrite, blanking fields the caller never named."""
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "error": "DuplicateEntityError",
+                "message": exc.message,
+                "entity_type": exc.entity_type,
+                "entity_id": exc.entity_id,
+            },
         )
 
     @app.exception_handler(TopicNotFoundError)
@@ -224,6 +244,10 @@ def create_app() -> FastAPI:
     app.include_router(runs_router)
     app.include_router(gates_router)
     app.include_router(quota_router)
+    app.include_router(domains_router)
+    app.include_router(topics_router)
+    app.include_router(channels_router)
+    app.include_router(focuses_router)
 
     return app
 
