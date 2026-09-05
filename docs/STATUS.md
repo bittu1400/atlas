@@ -262,6 +262,16 @@ a feature.
   `gate.metadata` field the API does not return, and were deleted with the rest of **V-03**. Bringing
   them back means endpoints that return an approved Run's asset candidates, script beats and quality
   report — not fixtures (**D111**, audit §15.7).
+- **Any way for an operator to create a Domain, a Topic or a Channel — and therefore any way to
+  create a Run.** `save_topic`, `save_domain` and `save_channel` have no caller outside `tests/`:
+  there are no `POST /topics`, `/domains` or `/channels` routes, no matching `atlas` commands, and
+  stage 1 discards the ideas it discovers (`IDEA_DISCOVERY` returns
+  `ideas_count_N` and saves nothing). `topics` is empty in any database a test did not seed, so
+  `POST /runs` violates `runs_topic_id_fkey` for every input, and does so as an untyped
+  `IntegrityError` that reaches the catch-all handler as a 500. **The dashboard's only write path
+  cannot succeed today.** Found 2026-09-05 by bringing the API and dashboard up and pressing the
+  button; defects **V-15** and **V-16**, tasks **T-62** and **T-63**, audit §17. The dashboard
+  reported the failure honestly rather than inventing a Run, which is **R13** holding.
 - **A real-provider run.** `docker compose up` now builds, but no Run has ever executed against
   Gemini, Ollama or Freesound end to end. **T-34**, still sequenced after T-29 and T-30.
 - **Timing that fits a target duration.** ADR-0006 §2 promises the Timing Plan solves per-Beat hold
