@@ -570,6 +570,15 @@ findings in `docs/AUDIT-2026-08-29.md` §15.
 | `apps/cli/main.py` | **Tree.** Three new command groups — `atlas domain create`, `atlas topic create`, `atlas channel create`. **This makes §1's "full parity" claim false in the opposite direction:** the CLI can now create rows the HTTP API cannot, so the dashboard still cannot bootstrap itself. Recorded, not hidden — see **D136** and §11.8. | T-62, D136 |
 | `apps/api/main.py` | **Tree.** Three exception handlers returning 404 for the new error types. No route was added or changed, so **§2.1 is unaffected**. | T-63 |
 
+### 11.7f Structure changed on 2026-09-05, second pass
+
+| Item | Which side changed | Note |
+|---|---|---|
+| `adapters/queue/inline.py` | **Tree.** `InlineQueueBroker` added and wired as the default. `DramatiqQueueBroker` could never run: nothing configured a broker, so dramatiq defaulted to Redis, which ADR-0001 rejected and which is not a dependency. | V-18, D140 |
+| `platform/config.py` | **Tree.** `Settings.queue_broker` (`inline` \| `dramatiq`). Dispatch becomes configuration rather than a hardcoded adapter. | D140 |
+| §3 and ADR-0001 | **Neither — the divergence stands.** "Postgres is the queue and the state store" is not implemented, and "the API only validates and enqueues; it never executes pipeline work" is contradicted by `runs.py`, which runs all eighteen stages in the request. Tasks **T-67** and **T-68**. | V-18, V-19 |
+| `apps/web/src/components/CatalogManager.tsx`, `RunPipeline.tsx`, `RunSummary.tsx`, `FieldNote.tsx` | **Tree.** The Catalog and Pipeline tabs. `RunPipeline` is the first consumer of `GET /runs/{id}/steps` and `GET /runs/{id}/gates`, which had existed unread since Phase 3. | T-64 |
+
 ### 11.8 Open structural items carried forward
 
 Everything above that is still open, in one list, so the next session does not have to re-derive it:

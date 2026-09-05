@@ -635,6 +635,8 @@ hazard as a STATUS that trails it — it is read as current.
 |---|---|---|
 | §1 (goals), §15 phase 4 | **Nothing in production could create a Domain, a Topic or a Channel**, so "every gate is approvable from both the browser and the terminal" was moot: no Run could be created from either against a database a test had not seeded. Defect **V-15**. | **Closed** — three CLI commands (T-62, **D136**) |
 | §5 (failure semantics) | An unknown `topic_id` reached the database and returned as an untyped `IntegrityError`, which the API answered with a 500. Defect **V-16**. | **Closed** — the use case resolves both rows first and raises a typed error; 404 (T-63, **D137**) |
+| §5 (failure semantics), ADR-0001 | **No Run could be created by any entry point.** No dramatiq broker was ever configured, so the default Redis broker was imported and `redis` is not installed. Defect **V-18**, P0. | **Closed** — `InlineQueueBroker` (**D140**) |
+| §6 (pipeline), ADR-0001 | The API runs all eighteen stages inside the request *and* enqueues the same work, where ADR-0001 says it "never executes pipeline work". Defect **V-19**. | **Open**, **T-67** and **T-68** |
 | §1 ("full CLI parity with the dashboard") | **Now false in the CLI's favour.** `atlas domain/topic/channel create` have no HTTP equivalent, so an operator can create a Run from the dashboard only after using the terminal once. Deliberate — see **D136** — and the smaller half of the gap that existed this morning, when neither surface could do it. | **Open**, **T-64** |
 
 

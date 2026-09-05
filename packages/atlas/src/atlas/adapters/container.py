@@ -25,11 +25,13 @@ from atlas.adapters.persistence.repositories.publishing_repository import Publis
 from atlas.adapters.persistence.repositories.source_repository import SourceRepository
 from atlas.adapters.publish.stub import StubPublisher
 from atlas.adapters.queue.dramatiq_broker import DramatiqQueueBroker
+from atlas.adapters.queue.inline import InlineQueueBroker
 from atlas.adapters.renderer.stub import StubRenderer
 from atlas.adapters.search.wikipedia import WikipediaSearch
 from atlas.adapters.sources.fetcher import HttpSourceFetcher
 from atlas.adapters.storage.local import LocalStorage
 from atlas.application.pipeline.runner import PipelineRunner
+from atlas.application.ports.queue import QueueBroker
 from atlas.platform.config import get_settings
 from atlas.platform.errors import AtlasError
 from atlas.platform.quota import QuotaManager
@@ -70,7 +72,15 @@ def _require_credential(value: str | None, variable_name: str) -> str:
 class Container:
     """Unified Dependency Injection Container for Production."""
 
-    def __init__(self, session: AsyncSession | None = None) -> None:
+    def __init__(
+        self, session: AsyncSession | None = None, queue_broker_kind: str | None = None
+    ) -> None:
+        """Build the production adapters.
+
+        `queue_broker_kind` selects the dispatch: `"inline"` (the default, and
+        the truth today) or `"dramatiq"`, which needs a broker that is actually
+        running. It falls back to `Settings.queue_broker`.
+        """
         self.session = session
         self.settings = get_settings()
         settings = self.settings
@@ -82,7 +92,15 @@ class Container:
         )
         self.image_gen = StubImageGenerator()
         self.speech = NoOpSpeech()
-        self.queue_broker = DramatiqQueueBroker()
+        # ADR-0001 decides Postgres is the queue and that the API never
+        # executes pipeline work. Neither is built, and dramatiq's own default
+        # broker is Redis — which that ADR rejected by name and which is not a
+        # dependency, so every Run creation died here (defect V-18). The
+        # default is now named for what actually happens.
+        kind = queue_broker_kind or settings.queue_broker
+        self.queue_broker: QueueBroker = (
+            DramatiqQueueBroker() if kind == "dramatiq" else InlineQueueBroker()
+        )
         self.search = WikipediaSearch()
         self.source_fetcher = HttpSourceFetcher()
         self.notifier = LoggingNotifier()

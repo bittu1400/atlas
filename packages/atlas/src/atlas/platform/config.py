@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     database_pool_size: int = Field(default=10, description="Database connection pool size")
     database_max_overflow: int = Field(default=20, description="Database max overflow connections")
 
+    # Dispatch. "inline" is the truth today: no background queue exists, and
+    # both entry points execute the Run in-process (defects V-18, V-19).
+    # "dramatiq" selects the real broker, which needs one actually running.
+    queue_broker: str = Field(default="inline", description="Queue dispatch: inline or dramatiq")
+
     # Storage
     storage_root: str = Field(default="var/blobs", description="Root path for blob storage")
     snapshot_root: str = Field(

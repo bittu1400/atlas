@@ -294,6 +294,15 @@ a feature.
   the result and returns `ideas_count_N`; the proposed ideas are discarded. Whether a model-proposed
   Topic may be persisted before a human has seen it is an Invariant-2 question and is deliberately
   left open — route (c) of **T-62**, **D136**.
+- **A background queue, and therefore any Run that does not block its caller.** ADR-0001 decides
+  Postgres is the queue and that "the API only validates and enqueues; it never executes pipeline
+  work". Neither is built. No broker was configured at all until 2026-09-05, so dramatiq fell back
+  to Redis — rejected by name in that same ADR, absent from `pyproject.toml` and from
+  `docker-compose.yml` — and **every** `POST /runs` and `atlas run create` died with
+  `ModuleNotFoundError: No module named 'redis'` (defect **V-18**, P0). `Container.queue_broker` is
+  now `InlineQueueBroker`, named for what actually happens: both entry points run all eighteen
+  stages inside the request. That is defect **V-19** and it is still open — tasks **T-67** and
+  **T-68**.
 - **A real-provider run.** `docker compose up` now builds, but no Run has ever executed against
   Gemini, Ollama or Freesound end to end. **T-34**, still sequenced after T-29 and T-30.
 - **Timing that fits a target duration.** ADR-0006 §2 promises the Timing Plan solves per-Beat hold
@@ -418,7 +427,14 @@ second session.
 - **No verification pass.** The registers were reconciled against the code — narrower than audit
   §15's re-measurement, which was not repeated. `ARCHITECTURE.md` §2.1 *was* re-checked against
   `app.openapi()` route by route, including the auth column.
-- **V-14 was found, not fixed.** See §4 and **D134**. It is still task **T-61**, still first.
+- **V-14 was found, not fixed.** See §4 and **D134**. It is still task **T-61**, now third behind
+  the queue defects.
+- **No Run was created through the fixed path.** The enqueue was the last thing between a request
+  and stage 1, which calls Gemini for real — 6–9 requests against a 20-a-day budget, on a pipeline
+  that can still be rejected at stage 17 (**V-14**). That is **T-34** and it is an operator
+  decision, not a verification step. The broker fix is covered by
+  `tests/integration/test_queue_broker_wiring.py`, which calls the broker the production container
+  actually resolves.
 - **No Run was created against real providers**, deliberately. The Topic that was created by hand
   makes `POST /runs` succeed now, and succeeding means stage 1 spends Gemini quota — that is
   **T-34**, and it stays sequenced behind T-29, T-30 and T-58.
