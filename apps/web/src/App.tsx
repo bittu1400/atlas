@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api/client';
 import { ApprovalQueue } from './components/ApprovalQueue';
+import { CatalogManager } from './components/CatalogManager';
 import { FocusLauncher } from './components/FocusLauncher';
 import { DashboardTab, Header } from './components/Header';
 import { KnowledgeExplorer } from './components/KnowledgeExplorer';
 import { QuotaLedgerMonitor } from './components/QuotaLedgerMonitor';
+import { RunPipeline } from './components/RunPipeline';
+import { RunSummary } from './components/RunSummary';
 import { RunsTable } from './components/RunsTable';
 import { TelemetryStream } from './components/TelemetryStream';
 
@@ -36,11 +39,14 @@ export const App: React.FC = () => {
     queryClient.invalidateQueries({ queryKey: ['gates'] });
     queryClient.invalidateQueries({ queryKey: ['telemetry'] });
     queryClient.invalidateQueries({ queryKey: ['knowledge'] });
+    queryClient.invalidateQueries({ queryKey: ['run-steps'] });
+    queryClient.invalidateQueries({ queryKey: ['run-gates'] });
+    queryClient.invalidateQueries({ queryKey: ['topics'] });
   };
 
   const handleSelectRun = (runId: string) => {
     setSelectedRunId(runId);
-    setActiveTab('knowledge');
+    setActiveTab('pipeline');
   };
 
   return (
@@ -61,7 +67,21 @@ export const App: React.FC = () => {
 
         {activeTab === 'dashboard' && (
           <div className="space-y-8">
+            <RunSummary runs={runs} pendingGates={gates.length} />
             <FocusLauncher onRunCreated={handleRefresh} />
+            <RunsTable
+              runs={runs}
+              selectedRunId={selectedRunId}
+              onSelectRun={handleSelectRun}
+            />
+          </div>
+        )}
+
+        {activeTab === 'catalog' && <CatalogManager />}
+
+        {activeTab === 'pipeline' && (
+          <div className="space-y-8">
+            <RunPipeline runId={selectedRunId} />
             <RunsTable
               runs={runs}
               selectedRunId={selectedRunId}

@@ -200,8 +200,12 @@ test.describe('Operator Dashboard (Anti-Fabrication & API Honesty)', () => {
 
     await page.goto('/');
 
-    // Click "Inspect" on the run to view Knowledge Object
+    // Inspect selects the Run and opens the Pipeline tab, which is where a
+    // suspended Run's stage actually is. The Knowledge panel is one tab over
+    // and keeps the selection; this assertion is about what that panel renders,
+    // not about which tab Inspect lands on.
     await page.getByRole('button', { name: /Inspect/i }).click();
+    await page.getByRole('button', { name: 'Knowledge' }).click();
 
     // Verify Knowledge Object header and dynamic claim text
     await expect(page.getByText('Knowledge Object KO-SYNTH-E2E (v1)')).toBeVisible();
@@ -330,5 +334,165 @@ test.describe('Launch form pickers (T-64)', () => {
 
     await expect(page.getByTestId('launcher-error')).toContainText('409');
     await expect(page.locator('#new-topic-id')).toHaveValue('topic_synth_dupe_01');
+  });
+});
+
+// The Catalog tab and the Pipeline tab, added 2026-09-05. The Catalog is the
+// only place an operator can create a Domain or a Focus at all; the Pipeline
+// tab is the first thing in the dashboard to read `/runs/{id}/steps` and
+// `/runs/{id}/gates`, which had existed unread since Phase 3.
+
+test.describe('Catalog and Pipeline (T-64)', () => {
+  const routeJson = async (
+    page: import('@playwright/test').Page,
+    path: string,
+    body: unknown,
+  ) => {
+    await page.route(path, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(body),
+      }),
+    );
+  };
+
+  const synthDomain = {
+    id: 'dom_synth_cartography',
+    name: 'PLACEHOLDER_SYNTH_DOMAIN',
+    description: 'PLACEHOLDER_SYNTH_DESCRIPTION',
+    research_profile: {
+      source_tier_floor: 'primary',
+      preferred_apis: ['synth_api_one'],
+      source_allowlist: ['*.placeholder.invalid', '*.placeholder.example'],
+    },
+  };
+
+  test('Assertion 8: the Catalog renders a Domain Research Profile from the API', async ({
+    page,
+  }) => {
+    await routeJson(page, '/api/runs', []);
+    await routeJson(page, '/api/gates/pending', []);
+    await routeJson(page, '/api/domains', [synthDomain]);
+    await routeJson(page, '/api/topics', []);
+    await routeJson(page, '/api/channels', []);
+    await routeJson(page, '/api/focuses', []);
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Catalog' }).click();
+
+    await expect(page.getByText('PLACEHOLDER_SYNTH_DOMAIN')).toBeVisible();
+    await expect(page.getByText('dom_synth_cartography')).toBeVisible();
+    await expect(page.getByText('synth_api_one')).toBeVisible();
+    await expect(page.getByText('2 patterns')).toBeVisible();
+    // Empty tables are shown as empty, never filled in.
+    await expect(page.getByText('No Topics exist.')).toBeVisible();
+    await expect(page.getByText('No Channels exist.')).toBeVisible();
+  });
+
+  test('Assertion 9: a Domain can be created from the Catalog', async ({ page }) => {
+    await routeJson(page, '/api/runs', []);
+    await routeJson(page, '/api/gates/pending', []);
+    await routeJson(page, '/api/topics', []);
+    await routeJson(page, '/api/channels', []);
+    await routeJson(page, '/api/focuses', []);
+
+    let posted: Record<string, unknown> | null = null;
+    await page.route('/api/domains', async (route) => {
+      if (route.request().method() === 'POST') {
+        posted = route.request().postDataJSON();
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify(synthDomain),
+        });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Catalog' }).click();
+    await page.getByRole('button', { name: 'New' }).first().click();
+
+    await page.locator('#domain-id').fill('dom_synth_cartography');
+    await page.locator('#domain-name').fill('PLACEHOLDER_SYNTH_DOMAIN');
+    await page.locator('#domain-description').fill('PLACEHOLDER_SYNTH_DESCRIPTION');
+    await page.getByRole('button', { name: 'Create Domain' }).click();
+
+    await expect.poll(() => posted).toEqual({
+      id: 'dom_synth_cartography',
+      name: 'PLACEHOLDER_SYNTH_DOMAIN',
+      description: 'PLACEHOLDER_SYNTH_DESCRIPTION',
+    });
+  });
+
+  test('Assertion 10: the Pipeline tab renders Step rows and the Gate holding them', async ({
+    page,
+  }) => {
+    const runId = 'run_synth_pipeline_01';
+    const stepId = 'step_synth_script_approval_11';
+
+    await routeJson(page, '/api/runs', [
+      {
+        id: runId,
+        topic_id: 'topic_synth_cartography_77',
+        channel_id: 'channel_synth_01',
+        status: 'suspended',
+        actor_id: 'op_e2e',
+        error: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        completed_at: null,
+      },
+    ]);
+    await routeJson(page, '/api/gates/pending', []);
+    await routeJson(page, '/api/topics', []);
+    await routeJson(page, '/api/channels', []);
+    await routeJson(page, '/api/domains', []);
+    await routeJson(page, '/api/focuses', []);
+    await routeJson(page, `/api/runs/${runId}/steps`, [
+      {
+        id: 'step_synth_research_02',
+        run_id: runId,
+        step_index: 2,
+        step_name: 'PLACEHOLDER_SYNTH_STAGE_RESEARCH',
+        status: 'succeeded',
+        output_artifact_ref: 'snp_synth_01',
+        error: null,
+        started_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+      },
+      {
+        id: stepId,
+        run_id: runId,
+        step_index: 11,
+        step_name: 'PLACEHOLDER_SYNTH_STAGE_SCRIPT_APPROVAL',
+        status: 'suspended',
+        output_artifact_ref: null,
+        error: null,
+        started_at: new Date().toISOString(),
+        completed_at: null,
+      },
+    ]);
+    await routeJson(page, `/api/runs/${runId}/gates`, [
+      {
+        id: 'gate_synth_09',
+        run_id: runId,
+        step_id: stepId,
+        gate_type: 'manual',
+        status: 'pending',
+        requested_at: new Date().toISOString(),
+        resolved_at: null,
+      },
+    ]);
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Inspect' }).first().click();
+
+    await expect(page.getByText('PLACEHOLDER_SYNTH_STAGE_RESEARCH')).toBeVisible();
+    await expect(page.getByText('PLACEHOLDER_SYNTH_STAGE_SCRIPT_APPROVAL')).toBeVisible();
+    await expect(page.getByText('gate_synth_09')).toBeVisible();
+    await expect(page.getByText('2 of 18 stages recorded')).toBeVisible();
   });
 });

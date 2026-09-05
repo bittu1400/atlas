@@ -37,6 +37,11 @@ a default, not global state: changing it never affects a Run already in flight.
 **Scope Mode** — `hard` (never leave the Focus), `soft` (prefer the Focus, allow adjacent graph nodes),
 `exploratory` (Focus as a seed). Default is `soft`.
 
+**Catalog** *(UI label only)* — The operator-managed reference data a Run is assembled from: Domains,
+Topics, Channels and Focuses. Not a domain concept and never an identifier — there is no Catalog
+table, no Catalog model and no Catalog endpoint. It names the dashboard tab where those four are
+listed and created, added 2026-09-05 with task T-64.
+
 ---
 
 ## Knowledge

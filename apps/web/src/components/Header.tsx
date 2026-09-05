@@ -9,7 +9,13 @@ import { api } from '../api/client';
 // whether or not the API answered (defect V-03). The pill now shows the Run
 // under inspection; the badge polls `/health`.
 
-export type DashboardTab = 'dashboard' | 'approval' | 'knowledge' | 'telemetry';
+export type DashboardTab =
+  | 'dashboard'
+  | 'catalog'
+  | 'approval'
+  | 'pipeline'
+  | 'knowledge'
+  | 'telemetry';
 
 interface HeaderProps {
   activeTab: DashboardTab;
@@ -20,7 +26,9 @@ interface HeaderProps {
 
 const TABS: Array<{ id: DashboardTab; label: string }> = [
   { id: 'dashboard', label: 'Dashboard' },
+  { id: 'catalog', label: 'Catalog' },
   { id: 'approval', label: 'Approval Queue' },
+  { id: 'pipeline', label: 'Pipeline' },
   { id: 'knowledge', label: 'Knowledge' },
   { id: 'telemetry', label: 'Telemetry & Quota' },
 ];

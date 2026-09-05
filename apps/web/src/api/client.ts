@@ -51,6 +51,8 @@ export const api = {
 
   getRunSteps: (runId: string) => request<StepItem[]>(`/runs/${runId}/steps`),
 
+  getRunGates: (runId: string) => request<GateItem[]>(`/runs/${runId}/gates`),
+
   getRunKnowledge: (runId: string) =>
     request<RunKnowledge>(`/runs/${runId}/knowledge`),
 

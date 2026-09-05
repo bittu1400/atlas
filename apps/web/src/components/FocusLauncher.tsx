@@ -36,6 +36,8 @@ export const FocusLauncher: React.FC<FocusLauncherProps> = ({ onRunCreated }) =>
 
   const [showNewTopic, setShowNewTopic] = useState(false);
   const [newTopic, setNewTopic] = useState({ id: '', title: '', domain_id: '' });
+  const [showNewDomain, setShowNewDomain] = useState(false);
+  const [newDomain, setNewDomain] = useState({ id: '', name: '', description: '' });
   const [showNewChannel, setShowNewChannel] = useState(false);
   const [newChannel, setNewChannel] = useState({
     id: '',
@@ -58,6 +60,18 @@ export const FocusLauncher: React.FC<FocusLauncherProps> = ({ onRunCreated }) =>
       setNewTopic({ id: '', title: '', domain_id: '' });
       setTopicId(topic.id);
       queryClient.invalidateQueries({ queryKey: ['topics'] });
+    },
+    onError: (err) => setError(errorText(err)),
+  });
+
+  const createDomain = useMutation({
+    mutationFn: api.createDomain,
+    onSuccess: (domain) => {
+      setError(null);
+      setShowNewDomain(false);
+      setNewDomain({ id: '', name: '', description: '' });
+      setNewTopic((topic) => ({ ...topic, domain_id: domain.id }));
+      queryClient.invalidateQueries({ queryKey: ['domains'] });
     },
     onError: (err) => setError(errorText(err)),
   });
@@ -191,9 +205,19 @@ export const FocusLauncher: React.FC<FocusLauncherProps> = ({ onRunCreated }) =>
                 </div>
               </div>
               <div>
-                <label htmlFor="new-topic-domain" className={labelClass}>
-                  Domain
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="new-topic-domain" className={labelClass}>
+                    Domain
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewDomain((open) => !open)}
+                    className="flex items-center gap-1 text-xs text-orange-400 hover:text-orange-300 cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                    {showNewDomain ? 'Cancel' : 'New domain'}
+                  </button>
+                </div>
                 <select
                   id="new-topic-domain"
                   value={newTopic.domain_id}
@@ -212,6 +236,76 @@ export const FocusLauncher: React.FC<FocusLauncherProps> = ({ onRunCreated }) =>
                   allowlist and source tier floor. Data, not a tag: it decides which sources this
                   Topic may draw on.
                 </FieldNote>
+
+                {showNewDomain && (
+                  <div className="mt-3 space-y-3 border border-[#2d3345] rounded-lg p-4 bg-[#0d1017]">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="new-domain-id" className={labelClass}>
+                          Domain ID
+                        </label>
+                        <input
+                          id="new-domain-id"
+                          value={newDomain.id}
+                          onChange={(e) => setNewDomain({ ...newDomain, id: e.target.value })}
+                          placeholder="dom_history"
+                          className={inputClass}
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="new-domain-name" className={labelClass}>
+                          Name
+                        </label>
+                        <input
+                          id="new-domain-name"
+                          value={newDomain.name}
+                          onChange={(e) => setNewDomain({ ...newDomain, name: e.target.value })}
+                          placeholder="History"
+                          className={inputClass}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label htmlFor="new-domain-description" className={labelClass}>
+                        Description
+                      </label>
+                      <input
+                        id="new-domain-description"
+                        value={newDomain.description}
+                        onChange={(e) =>
+                          setNewDomain({ ...newDomain, description: e.target.value })
+                        }
+                        placeholder="What this Domain covers"
+                        className={inputClass}
+                      />
+                    </div>
+                    <FieldNote>
+                      A new Domain starts with an empty Research Profile and a source tier floor of{' '}
+                      <span className="font-mono">institutional</span>. Tightening it, or adding a
+                      source allowlist, is not editable here yet — see the Catalog tab for what each
+                      Domain currently carries.
+                    </FieldNote>
+                    <button
+                      type="button"
+                      disabled={
+                        createDomain.isPending ||
+                        !newDomain.id.trim() ||
+                        !newDomain.name.trim() ||
+                        !newDomain.description.trim()
+                      }
+                      onClick={() =>
+                        createDomain.mutate({
+                          id: newDomain.id.trim(),
+                          name: newDomain.name.trim(),
+                          description: newDomain.description.trim(),
+                        })
+                      }
+                      className="text-sm bg-[#242938] hover:bg-[#2d3345] border border-[#2d3345] text-white px-4 py-2 rounded-lg disabled:opacity-50 cursor-pointer"
+                    >
+                      {createDomain.isPending ? 'Creating…' : 'Create Domain'}
+                    </button>
+                  </div>
+                )}
               </div>
               <button
                 type="button"
