@@ -5,29 +5,44 @@ This file tells you **how to work in this repository**. It is not the product vi
 | Document | What it is | Authority |
 |---|---|---|
 | `docs/STATUS.md` | **Read first.** Current phase, measured baseline, what exists vs what does not, and the session close-out checklist | Authoritative for state |
-| `docs/AUDIT-2026-08-29.md` | **Read second** — **§18 first if you are the next session: it is the whole brief, a five-angle verification.** Then §17 (the 2026-09-05 session: V-15 – V-19; T-62, T-63, T-64, T-66 closed), then §16 (the 2026-09-04 session: CI closed, T-20 closed, defect **V-14** found), then §15 (the second 2026-08-31 verification, defects V-01–V-13; **§15.9 is the live ordered task list**, §15.8 is what not to do), then §14 and §13. The Phase 7 fabrication incident and the full defect register are in §1–§12 | Authoritative for what is actually broken |
+| `docs/AUDIT-2026-08-29.md` | **Read second — §19 first.** It is the register of the five-angle verification (2026-09-05): **70 defects, V-20 – V-89**, and **§19.10 is the live ordered task list**. §19.7 is what held and must not be re-audited; §19.8 is a correction the session made to itself; §19.9 is what it could not check. Then §18 (the brief that commissioned it — §18.0's standing rule still binds), §17 (V-15 – V-19), §16 (V-14), §15 (V-01 – V-13; **§15.9 is superseded by §19.10**, §15.8 is what not to do), then §14 and §13. The Phase 7 fabrication incident and the original register are §1–§12 | Authoritative for what is actually broken |
 | `docs/archive/` | Superseded documents kept as evidence under rule R11. **Nothing in here is a current claim** | Historical record only |
 | `prompt.md` | The founder's original vision statement | Immutable. Never edit. Cite it, don't rewrite it. |
 | `docs/SPEC.md` | Product truth — what Atlas does and what "correct" means | Authoritative for behaviour |
 | `docs/ARCHITECTURE.md` | System structure, layering, module map | Authoritative for structure |
-| `docs/adr/` | Why each major decision was made (0001–0017; 0010 is void, see 0011) | Authoritative for rationale |
+| `docs/adr/` | Why each major decision was made (0001–0018; 0010 is void, see 0011). **Five currently contradict the code and none has been amended — D147:** 0012, 0002, 0003 vs 0016, 0005, 0009 | Authoritative for rationale, **not for what the code does** |
 | `docs/GLOSSARY.md` | Ubiquitous language | Authoritative for naming |
-| `docs/DECISIONS.md` | Log of settled choices (D1–D125) | Record; supersede via ADR only |
+| `docs/DECISIONS.md` | Log of settled choices (D1–D151) | Record; supersede via ADR only |
 | `CLAUDE.md` | How to work here | This file |
 
-**Read order before any non-trivial change:** `docs/STATUS.md` → `docs/AUDIT-2026-08-29.md` §18
-(the standing brief), then §17, then §16, then §15 (**§15.9 is the live ordered task list**, §15.8 is what not to do), then §14 and §13 →
-`docs/SPEC.md` §17 → `docs/ARCHITECTURE.md` **§2.1** (the HTTP surface) and §11 → the relevant ADR →
-the code.
+**Read order before any non-trivial change:** `docs/STATUS.md` → `docs/AUDIT-2026-08-29.md`
+**§19** (the current register; **§19.10 is the live ordered task list**), then §18 (§18.0's standing
+rule), §17, §16, §15 (§15.8 is what not to do), then §14 and §13 →
+`docs/SPEC.md` §17 (§17.12 newest) → `docs/ARCHITECTURE.md` **§2.1** (the HTTP surface, verified
+correct 2026-09-05) and §11 (§11.7g newest) → the relevant ADR → the code.
+
+**Two things to know before you read anything else.** A Claim reaching `verified` does not currently
+mean it was verified — `VerificationAgent` maps the model's verdict with `if "verif" in status` and
+defaults a missing verdict to `"verified"`, so `"unverified"` promotes the claim (**V-58**, task
+**T-103**, two lines). And a stage that raises rolls back the entire Run record — no `runs` row, no
+failed `steps` row, no `model_calls`, no `quota_ledger` (**V-20**, task **T-69**). Both were probed,
+not inferred.
 
 `docs/STATUS.md` comes first because every other document describes what Atlas *will* be. Only STATUS
 tells you what exists right now, and it is the one file to update at the end of a working session —
 its §5 carries the close-out checklist.
 
-**As of 2026-08-31, STATUS is rewritten from measurement and the three registers agree with the
-code — twice that day, the second time after the V-01–V-11 remediation:** `STATUS.md` (what exists), `SPEC.md` §17 (behaviour divergences), `ARCHITECTURE.md` §11
-(structure divergences). Where any two disagree, the audit wins and the disagreement is itself a
-finding — write it down before doing anything else.
+**As of 2026-09-05 the four registers have been reconciled against the code by the five-angle
+verification (audit §19):** `STATUS.md` (what exists — its §2 was corrected and its invariant table
+gained a **Gap** column), `SPEC.md` §17.12 (behaviour divergences), `ARCHITECTURE.md` §11.7g and
+§11.8 (structure divergences), and `AUDIT-2026-08-29.md` §19 (the register). Where any two disagree,
+the audit wins and the disagreement is itself a finding — write it down before doing anything else.
+
+**Reconciled does not mean correct.** That session found 70 defects and fixed none of them (**D144**);
+the registers now describe a system with a broken verification path, a rollback that erases failed
+Runs, an unauthenticated API and a schema that does not match its models. `STATUS.md` §2 tells you
+what holds; audit §19.7 tells you what was checked and found sound; audit §19.9 tells you what nobody
+has checked at all.
 
 ---
 

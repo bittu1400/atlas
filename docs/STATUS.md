@@ -1,7 +1,19 @@
 # Status
 
-**Last updated:** 2026-09-05 (V-15 – V-19 found by operating the system; T-62, T-63, T-64 and T-66 closed)
+**Last updated:** 2026-09-05, second session of the day — **the five-angle verification
+(`docs/AUDIT-2026-08-29.md` §18) was run and found 70 defects, V-20 – V-89. No code was changed.**
 **Branch:** `docs/audit-2026-08-29` — see §1.
+
+> **Read `docs/AUDIT-2026-08-29.md` §19 before you touch anything.** It is the register of what that
+> verification found and **§19.10 is the live ordered task list, superseding §15.9**. This file's §2
+> has been corrected against it; four claims that stood here yesterday were false and have moved to
+> §3 or §4 with a finding ID.
+>
+> **The single most important line in this file:** a Claim reaching `verified` does not currently
+> mean it was verified. `VerificationAgent` maps the model's verdict with `if "verif" in status`,
+> defaulting a missing verdict to `"verified"` — so `"unverified"` and `"cannot be verified"` both
+> promote the claim (**V-58**, task **T-103**, two lines). Everything downstream of Invariant 1 rests
+> on that flag.
 
 This file separates **decided** from **done**. Everything else in `docs/` records what Atlas *will*
 be; this records where it actually stands. It is rewritten from measurement at the end of every
@@ -14,8 +26,9 @@ current claim.
 
 ## 0. Measured baseline
 
-Measured on 2026-09-05, in the session that wrote this section, after the T-62, T-63, T-64 and V-18 changes.
-**Re-run them before quoting them** (**R7**).
+Measured on 2026-09-05 **at the end of the verification session that wrote this section**, on a clean
+tree with no code changes since the previous measurement. **Re-run them before quoting them**
+(**R7**).
 
 ```
 $ uv run ruff check .
@@ -24,19 +37,25 @@ All checks passed!
 $ uv run mypy .
 Success: no issues found in 179 source files
 
-$ uv run pytest --tb=short
-191 passed in 21.63s
+$ uv run pytest
+191 passed in 20.69s
 
 $ uv run pre-commit run --all-files
 Ruff Lint Check / Ruff Format Check / Anti-Fabrication Structural Guard — Passed
 
 $ pnpm test
-10 passed (4.3s) — apps/web/e2e/dashboard.spec.ts, Playwright Chromium
+10 passed (7.5s) — apps/web/e2e/dashboard.spec.ts, Playwright Chromium
 
 $ pnpm -r build
 packages/tokens · apps/renderer · apps/web — 3 of 3 built
 
-# 2026-09-05, same session:
+# all of the following also measured 2026-09-05, same session:
+$ find tests -name 'test_*.py' | wc -l
+33 test modules   # audit §18.1 said 36; that was wrong — defect V-57
+
+$ find packages apps -name '*.py' -not -path '*__pycache__*' | wc -l
+141 Python files
+
 $ ls .../alembic/versions/*.py | grep -v __init__ | wc -l
 7 migrations on disk
 
@@ -45,13 +64,26 @@ $ uv run python -c "from atlas.adapters.persistence.tables import Base; print(le
 
 $ uv run python -c "from apps.api.main import app; print(len(app.openapi()['paths']))"
 15 paths, 20 operations — transcribed in ARCHITECTURE §2.1
+
+$ uv run alembic check
+FAILED: New upgrade operations detected: [...]
 ```
 
-`alembic upgrade head` **was** run against the `atlas` database this session — it is how the API and
-the dashboard were brought up, and it is where `topics` was found empty (defect **V-15**). The 7 and
-the 30 above are still counted from the migration files and from `Base.metadata` rather than from a
-fresh apply, which is a weaker measurement, and is written down as such rather than carried forward
-as if it were the stronger command (**R7**). CI runs the real `alembic upgrade head` on every push.
+**`alembic check` fails.** That is defect **V-49**, not a pending change: the migrated schema and the
+ORM models disagree. The material part is three foreign keys — `gates.run_id`, `approvals.run_id`,
+`model_calls.run_id` → `runs.id ON DELETE CASCADE` — declared in `tables.py` and **absent from the
+database**, confirmed directly in `pg_constraint`. `test_alembic_migrations_roundtrip` runs four
+alembic commands and **asserts nothing**, and CI never runs `alembic check`, which is why this has
+never been visible. Task **T-95**.
+
+The 7 and the 30 above are counted from the migration files and from `Base.metadata`. **The
+2026-09-05 verification session additionally applied `alembic upgrade head` to `atlas_test` three
+times and read the result back**, which is the stronger measurement and is what produced V-49 — on
+2026-09-05 that database held 31 tables in
+`information_schema` (30 plus `alembic_version`), 18 immutability triggers, and the constraint
+inventory in audit §19.6. `atlas_test` was returned to `base` afterwards, which is where `pytest`
+leaves it. The `atlas` application database was **read and not written** by that session. CI runs
+`alembic upgrade head` on every push; it does **not** run `alembic check` (**T-95**).
 
 There are no `xfail` markers in the suite, and as of 2026-09-04 there are **no skips in CI either**:
 `test_production_adapters.py:148` needs ffmpeg, the runner image has none, and `ci.yml` now installs
@@ -104,6 +136,19 @@ new information. Recorded rather than ticked silently.
 
 ## 1. Working tree state
 
+**The verification session of 2026-09-05 changed no code, no configuration and no schema.** It wrote
+`docs/AUDIT-2026-08-29.md` §19 and edited this file, `SPEC.md` §17.12, `ARCHITECTURE.md` §11.7g/§11.8,
+`DECISIONS.md` (D144–D151) and `CLAUDE.md`'s read order. Nothing under `packages/`, `apps/` or
+`tests/` was touched, so §0's numbers describe the same tree the previous session left.
+
+**Three rows were written to `atlas_test` and removed again**; the database was returned to `base`.
+The **`atlas` application database was read and never written** by that session. Reading it produced
+two findings: `focus` and `active_focus` are **empty** (defect **V-37** — nothing can set the Active
+Focus, so every Run captures an unpersisted in-memory Focus), and `topics` holds **three** rows where
+§1 below records one (defect **V-56** — `topic_origin_of_chess` and `topic_origin_of_art`, created
+2026-09-05 at 10:09 and 10:59, were never written down; both are additive and `proposed`, nothing was
+overwritten). `runs` is empty: **no Run has ever existed in the application database.**
+
 Clean on branch `docs/audit-2026-08-29`. The most recent behavioural commit is the **V-18** queue
 fix, preceded by the T-64 dashboard work (Catalog and Pipeline tabs, eight routes, four repository
 listings), the V-17 duplicate guard, the T-62/T-63 remediation, the commit recording **V-15** and
@@ -141,12 +186,34 @@ working tree.
 Verified means: exercised by a test that inspects database state after a real run, not merely that a
 function exists.
 
-**Phase 1 · Architecture** — complete. Spec, architecture, glossary, ADRs 0001–0018.
+> **Corrected 2026-09-05 by the §19 verification.** Four claims that stood in this section were false
+> or narrower than they read, and each is marked below with its finding ID. A fifth — "Phase 5
+> agents complete" — is qualified rather than withdrawn. Do not read a paragraph here without its
+> correction.
 
-**Phase 2 · Database** — complete. 30 tables, 7 Alembic migrations, round-trip tested
-(`test_alembic_migrations_roundtrip` applies head → base → head). Knowledge Objects are
-row-per-version with a separate current pointer (ADR-0003). Claims are append-only: an immutable
-identity row plus `claim_versions`, each version carrying the actor and the reason (ADR-0015).
+**Phase 1 · Architecture** — complete. Spec, architecture, glossary, ADRs 0001–0018. **Caveat
+(V-85, V-86, V-87, V-88):** four ADRs describe a system that is not the one in the tree — ADR-0003 §2
+contradicts ADR-0016 on whether production artifacts are versioned and neither supersedes the other;
+ADR-0003 §4 promises a database constraint excluding unsupported claims that does not exist;
+ADR-0009 names three wired adapters that are not wired; ADR-0005's single-source design tokens are
+consumed by `apps/renderer` and **not** by `apps/web`, which carries 17 hardcoded hex colours.
+
+**Phase 2 · Database** — complete, with one real gap. 30 tables, 7 Alembic migrations, round-trip
+tested (`test_alembic_migrations_roundtrip` applies head → base → head — **but it asserts nothing**,
+which is how **V-49** stayed invisible). Knowledge Objects are row-per-version with a separate
+current pointer (ADR-0003). Claims are append-only: an immutable identity row plus `claim_versions`,
+each version carrying the actor and the reason (ADR-0015), and **`(claim_id, version)` is the primary
+key**, so a duplicate version is impossible at the database level.
+
+**What is genuinely strong here, verified in the database on 2026-09-05:** ADR-0008 is fully
+implemented — 18 immutability triggers (`trg_prevent_delete_*` on 12 tables, `trg_prevent_update_*`
+on 6), `uq_snapshot_source`, and the composite
+`fk_evidence_snapshot (snapshot_id, source_id) → snapshots(id, source_id)`, so **evidence cannot
+forge its source**. ADR-0013's `incident_2026_08_29` quarantine schema exists in both databases.
+
+**What is broken here (V-49):** `gates.run_id`, `approvals.run_id` and `model_calls.run_id` declare
+`ForeignKey("runs.id", ondelete="CASCADE")` in `tables.py` and **have no such constraint in the
+database**. `alembic check` fails. Task **T-95**.
 
 **Phase 3 · Backend** — complete. FastAPI, Dramatiq worker, the 18-stage Run/Step state machine,
 gates, approvals, resource locks, idempotency keys and the quota ledger. A Run traverses every stage
@@ -160,10 +227,25 @@ and the Gate holding each), Knowledge, and Telemetry & Quota. The last two tabs 
 `GET /runs/{id}/gates` have ever had — both routes existed unread since Phase 3. Every panel renders a database row or an error —
 until 2026-08-31 five of its components rendered invented claims, invented snapshot hashes and an
 invented telemetry feed, and its API client answered an unreachable backend with fabricated Runs and
-a fabricated passing quality report (defect **V-03**, audit §15.4). **Browser testing is real and verified
-via Playwright** (task **T-55**, **ADR-0018**): `apps/web/e2e/dashboard.spec.ts` executes in headless Chromium,
-asserting that the dashboard renders live API topic IDs, gate step IDs, error banners on failed actions,
-and real snapshot hashes without fixtures.
+a fabricated passing quality report (defect **V-03**, audit §15.4). **Browser testing is real**
+(task **T-55**, **ADR-0018**): `apps/web/e2e/dashboard.spec.ts` executes in headless Chromium,
+asserting that the dashboard renders the topic IDs, gate step IDs, error banners and snapshot hashes
+**the API returned**, rather than fixtures.
+
+**Corrected (V-53): those tests never reach a server.** All ten assertions install
+`page.route('/api/…')` handlers that fulfil synthetic JSON, so "live API" — the phrase this paragraph
+used to carry — was wrong. They prove exactly what T-55 built them for, that a component renders its
+props, and nothing about the API. ADR-0018 is honest about being route-level; this file was not.
+**Nothing anywhere asserts that `apps/api/schemas.py` and `apps/web/src/api/types.ts` agree** — the
+mocked run object already omits `captured_focus` and `trace_id`, both required by `RunItem`. Task
+**T-99**.
+
+**Two panels still render a failure as a fact (V-35, V-36).** `App.tsx` discards the pending-gates
+query error, so a failed `GET /gates/pending` shows a zero badge, "Awaiting a human: 0" and "No
+pending Gates"; `RunSummary` discards the topics error, so a failed `GET /topics` shows
+"Topics: 0 — Candidate subjects available to launch". Task **T-84**. And **one keystroke approves a
+gate** — a bare `a`, no modifier, no confirmation, while rejection demands a structured modal
+(**V-75**, task **T-117**).
 
 
 **An operator can create the rows a Run needs, and a bad ID fails as a typed 404 (T-62, T-63,
@@ -202,9 +284,30 @@ rejects the short plan — the last of which failed with `duration_bounds is Tru
 which is defect **R-04** reproduced. **What this does not do is make the duration correct**, only
 honest: nothing steers a Script towards 60 s. See §3 and defect **V-14**.
 
-**Phase 5 · Agents** — complete. Topic discovery, research, extraction, verification, story angle,
-script, storyboard, sound design and quality judge. An ORIGINS Topic yields a source-traced
-Knowledge Object and a Script whose every beat cites verified claims. **Topic title resolution is
+**Phase 5 · Agents** — the nine agents exist and run. **Four of them do something other than what
+this line used to claim, found by the §19 verification:**
+
+- **`VerificationAgent` does not verify (V-58, P0, task T-103).** `VerificationResultItem.status` is
+  a free `str` defaulting to `"verified"`, mapped by `if "verif" in raw_status`. `"unverified"`,
+  `"not verified"` and `"cannot be verified"` all promote the claim; a missing field does too. It is
+  the only path a Claim can take to `VERIFIED`, and `_assert_script_claims_are_traceable` gates
+  rendering on exactly that status.
+- **`JudgeAgent` invents scores (V-59) and two of its deterministic checks are hardcoded `True`
+  (V-60).** A missing rubric dimension is scored `80.0` by Atlas, and `min_length=8` does not require
+  eight *distinct* dimensions — so a near-empty judge response yields a **passing** quality report.
+  `loudness_bounds` and `safe_margins` always pass; nothing measures either.
+- **`ResearchAgent` asserts a tier it never establishes (V-80) and invents a source when search
+  returns nothing (V-81).** Every source is written `source_tier=PRIMARY`; on zero hits the agent
+  builds a `SearchResultItem` with a made-up title and a Wikipedia URL guessed from the Topic slug,
+  then snapshots it. This is the shape R1/R2 forbid, in `application/` where no guard looks (V-82).
+- **`SoundDesignAgent` produces an artifact that is discarded (V-62)** — no `soundtracks` table, no
+  `save_soundtrack`, and the renderer never receives it — and it holds a rate-limited network
+  provider with **no `QuotaManager`** (V-79), so ~31 Freesound calls per Run go unmetered.
+
+The rest holds: topic discovery, extraction (with a real verbatim check), story angle, script and
+storyboard run end to end against fakes. An ORIGINS Topic yields a source-traced Knowledge Object
+and a Script whose every beat cites claims the pipeline believes are verified — see V-58 for what
+that belief is worth. **Topic title resolution is
 honest (T-22, D128):** `PipelineRunner._resolve_topic_title` loads `topic.title` from `SourceRepository`
 and propagates it to `ResearchAgent`, `ExtractionAgent`, `ScriptAgent`, `JudgeAgent`, and archival search,
 eliminating the four sites where raw snake_case IDs were previously passed into prompts and queries.
@@ -222,10 +325,25 @@ Run from creation to `completed` through all six human gates and then asserts, a
 every claim in the Knowledge Object resolves to evidence with a source and a snapshot; every beat
 cites only claims from that Knowledge Object; exactly one `script_generation_v1` model call was
 metered for the run; the storyboard references the persisted script and timing plan; render
-artifacts exist for both aspect ratios with WebVTT captions carrying real cues; publication ran once
+artifacts exist for both aspect ratios with WebVTT captions; publication ran once
 per artifact; every `model_calls` row records `provider='fake'`, the adapter that actually ran; the stage 1 topic
 discovery call and both stage 13 embedding calls are metered with matching `quota_ledger` entries in
 the minute and day windows.
+
+**Three corrections to that paragraph (2026-09-05).**
+
+- **The caption assertion is over a literal (V-54).** It checks `startswith("WEBVTT")` and
+  `"-->" in captions` against `FakeRenderer`'s hardcoded
+  `b"WEBVTT\n\n00:00:00.000 --> 00:00:03.500\nKinetic Text Line"`. Deleting `generate_webvtt` from
+  `StubRenderer` would not fail it. The **real** derivation from the Timing Plan is covered — in
+  `tests/integration/test_production_adapters.py:140-145,173-174` — so this sentence credited the
+  wrong test. The words "carrying real cues" have been removed.
+- **This test never commits (V-50).** Like every integration test it runs inside the `db_session`
+  fixture's transaction, which is rolled back at teardown. Nothing in the suite exercises a commit,
+  cross-transaction visibility, the `with_for_update` gate lock, or the GPU lease across processes.
+- **It proves nothing about a failing Run (V-20).** When a stage raises, the request's transaction
+  rolls back and the `runs`, `steps`, `gates`, `model_calls` and `quota_ledger` rows all disappear —
+  probed on both the API and the CLI. The suite cannot see it because the fixture rolls back anyway.
 
 ### 2.1 Phase numbering — SPEC §15 is the numbering (D58, T-38)
 
@@ -236,10 +354,10 @@ work is recounted rather than lost.
 | SPEC §15 phase | What it means | Old STATUS name | State |
 |---|---|---|---|
 | 1 · Architecture | Spec, architecture, glossary, ADRs | Phase 1 (Architecture) | **complete** |
-| 2 · Database | Schema, migrations, KO versioning, repositories | Phase 2 (Database & Persistence) | **complete** |
-| 3 · Backend | FastAPI, worker, Run/Step state machine, gates, quota | Phase 3 (+ 3.1 remediation) | **complete** |
-| 4 · Frontend + CLI | Dashboard shell, approval queue, CLI parity | Phase 4 (Frontend + Remotion Renderer) | **CLI complete. Dashboard reads the API across six tabs, renders no fixtures, and is covered by 10 browser tests. An operator can create a Domain, Topic, Channel and Focus and launch a Run without a terminal (T-64).** Still missing: the approval queue cannot show the artifact under review (**T-59**), and no Research Profile or Style Profile can be edited. The renderer half of the old name was never Phase 4 work. |
-| 5 · Agents | Research, extraction, verification, script, judge | Phase 5 (Agents & Intelligence Engine) | **complete** |
+| 2 · Database | Schema, migrations, KO versioning, repositories | Phase 2 (Database & Persistence) | **complete, with a live drift.** `alembic check` fails: three declared foreign keys are absent from the database and `model_calls.parameters` is `JSON` where the model says `JSONB` (**V-49**, **T-95**). ADR-0008's 18 immutability triggers and composite evidence FK are real and verified. |
+| 3 · Backend | FastAPI, worker, Run/Step state machine, gates, quota | Phase 3 (+ 3.1 remediation) | **The state machine runs; three of its properties do not hold.** A failed stage rolls back the whole Run record (**V-20**, P0); a rejected gate deadlocks with no operator action (**V-21**); the API is unauthenticated by default and its auth can be enabled without a key (**V-29**, **V-30**). The queue ADR-0001 decided still does not exist (**V-18**, **V-19**, **V-45**). |
+| 4 · Frontend + CLI | Dashboard shell, approval queue, CLI parity | Phase 4 (Frontend + Remotion Renderer) | **CLI complete. Dashboard reads the API across six tabs, renders no fixtures, and is covered by 10 browser tests — which mock the API at the network layer (V-53) rather than reaching it. An operator can create a Domain, Topic, Channel and Focus and launch a Run without a terminal (T-64), but not from an empty database — that walkthrough is still unrun (T-87).** Still missing: the approval queue cannot show the artifact under review (**T-59**), and no Research Profile or Style Profile can be edited (**V-38**). Two panels render a failed fetch as a fact (**V-35**, **V-36**); one keystroke approves a gate (**V-75**); the built bundle has no deployment (**V-52**). The renderer half of the old name was never Phase 4 work. |
+| 5 · Agents | Research, extraction, verification, script, judge | Phase 5 (Agents & Intelligence Engine) | **The nine agents exist and run against fakes. Four do not do what their names say** — verification promotes on a substring (**V-58**, P0), the judge invents missing scores and hardcodes two deterministic checks (**V-59**, **V-60**), research asserts a source tier and invents a source on zero hits (**V-80**, **V-81**), sound design discards its artifact and is unmetered (**V-62**, **V-79**). See §2. |
 | 6 · Knowledge system | Graph, Entity binding, novelty, impact index | *no old equivalent* | **not started.** `application/policies/` holds only gate, license and quota policy. |
 | 7 · Rendering | Remotion compositions, sound design, both targets | Phase 7 (End-to-End Execution) — fabricated | **not started.** Deferred by D57; the data path into the renderer is proven (ADR-0016). |
 | 8 · Publishing | Publisher adapters, slot scheduler, attribution | Phase 6E | **not started.** `StubPublisher` only. |
@@ -259,20 +377,24 @@ the wired adapters in that list, only `LocalStorage` had ever been touched by a 
 
 ### Invariants with an enforcing check that runs
 
-| Invariant | Enforced by | Proven by |
-|---|---|---|
-| 1 · No fact without a source | `validate_knowledge_object_claims_are_traceable`, called by `KnowledgeRepository.save_version` before any write | `test_no_claim_reaches_output_without_evidence` |
-| 1 · Verbatim evidence | `ExtractionAgent` rejects any quote not present in the snapshot | `test_every_evidence_quote_is_verbatim_in_its_snapshot` |
-| 1 & 2 · Pre-render backstop | `PipelineRunner._assert_script_claims_are_traceable` on the persisted script | the end-to-end assertions above |
-| 2 · A model is never the source | Claims start `unverified`; only `VerificationAgent` may promote them | `test_claim_is_not_verified_at_extraction_time` |
-| 4 · Append-only knowledge | `claim_versions`; `save_claim` inserts, never updates | `test_claim_state_changes_append_a_version_and_never_overwrite` |
-| 5 · No provider SDK outside its adapter | AST guards 1–4 over `adapters/` | `tests/unit/test_no_fabrication.py` |
-| 7 · Every artifact records how it was made | `model_calls` provenance taken from the adapter that executed; production artifacts persisted | `test_model_call_provenance_matches_the_adapter_that_ran` |
-| 8 · Every model call is metered | Every agent holding an LLM or Embedder port takes a `QuotaManager`; `check_rate_limits` reads `quota_ledger` | `test_guard_9_every_agent_that_calls_a_model_holds_a_quota_manager`, `tests/integration/test_quota_enforcement.py`, and the end-to-end assertions on `topic_discovery_v1` and `embedding_v1` |
-| 9 · AI imagery needs human approval | An `Approval` row on the asset-selection gate, resolved by step ID | `test_ai_generated_asset_cannot_be_used_without_approval` **and** `test_ai_generated_asset_is_usable_once_a_human_approves_the_gate` |
-| 10 · Licenses enforced by a gate | `LicensePolicy.validate_asset_license` at asset discovery and storyboard cuts, over a canonicalized license identifier | `test_guard_6_policy_validation_methods_have_production_callers`, plus 19 parametrized dialect tests |
-| R4 · No fixture reads as a fact, in any language | AST guard over Python fakes; text guard over `apps/web/src` and `apps/renderer/src` | `test_guard_7_*` and `test_guard_8_*` |
-| R5/R8 · A failed gate action is never shown as a decision | `ApprovalQueue` surfaces the error and records nothing | `test_guard_8_gate_actions_do_not_report_success_on_failure` |
+> **Corrected 2026-09-05 (audit §19).** This table was read as a list of invariants that hold. It is
+> a list of checks that **run** — which is not the same thing, and five rows are narrower than they
+> look. A **Gap** column has been added; a row with a gap is not a row you may rely on.
+
+| Invariant | Enforced by | Proven by | Gap found 2026-09-05 |
+|---|---|---|---|
+| 1 · No fact without a source | `validate_knowledge_object_claims_are_traceable`, called by `KnowledgeRepository.save_version` before any write | `test_no_claim_reaches_output_without_evidence` | **Checks that a `claim_evidence` row exists, not its stance.** A claim whose only evidence **contradicts** it passes. The stance check lives in `validate_claim_publication_readiness`, which has **no production caller** — and Guard 6 scans only `application/policies/`, so it cannot see a decorative invariant in `domain/`. **V-84**, **T-123**. |
+| 1 · Verbatim evidence | `ExtractionAgent` rejects any quote not present in the snapshot | `test_every_evidence_quote_is_verbatim_in_its_snapshot` | Holds — but it is **not** a defence against prompt injection: an injected quote really is present in the attacker's page, so the check passes it (**V-71**, **T-113**). The rejection count is logged and recorded nowhere (**V-69**). |
+| 1 & 2 · Pre-render backstop | `PipelineRunner._assert_script_claims_are_traceable` on the persisted script | the end-to-end assertions above | Gates on `status == VERIFIED`, which **V-58** makes unreliable. The backstop is sound; the flag it reads is not. |
+| 2 · A model is never the source | Claims start `unverified`; only `VerificationAgent` may promote them | `test_claim_is_not_verified_at_extraction_time` | **BROKEN (V-58, P0).** True that only `VerificationAgent` promotes; false that promotion means anything. `status: str = "verified"` mapped by `if "verif" in raw_status` — `"unverified"` promotes, a missing field promotes. No test asserts what the model must return. **T-103.** |
+| 4 · Append-only knowledge | `claim_versions` with primary key `(claim_id, version)`; `save_claim` inserts, never updates; 18 database triggers reject DELETE/UPDATE on the core knowledge tables (ADR-0008, verified in `pg_trigger`) | `test_claim_state_changes_append_a_version_and_never_overwrite` | Holds for knowledge. **Does not hold for the Active Focus pointer**: `set_active_focus` runs `DELETE` then insert, and `active_focus` is the one Focus table with no trigger — against ADR-0002 §7's "append-only records with actor and timestamp" (**V-77**, **T-118**). |
+| 5 · No provider SDK outside its adapter | AST guards 1–4 over `adapters/` | `tests/unit/test_no_fabrication.py` | None found. |
+| 7 · Every artifact records how it was made | `model_calls` provenance taken from the adapter that executed; production artifacts persisted | `test_model_call_provenance_matches_the_adapter_that_ran` | **Two of the five fields Invariant 7 names are constants (V-78).** `code_version="phase-5-v1"` is a literal at all seven call sites; `prompt_version` is a name, not a hash, and `get_prompt_hash` has no caller. The test checks the **provider** only. Also: the SoundTrack is not persisted at all (**V-62**), and on a stage failure the whole provenance set is rolled back (**V-20**). **T-119.** |
+| 8 · Every model call is metered | Every agent holding an LLM or Embedder port takes a `QuotaManager`; `check_rate_limits` reads `quota_ledger` | `test_guard_9_every_agent_that_calls_a_model_holds_a_quota_manager`, `tests/integration/test_quota_enforcement.py`, and the end-to-end assertions on `topic_discovery_v1` and `embedding_v1` | **Three gaps.** A **failed** provider call is never metered — `record_invocation` runs only on success (**V-44**). `SoundDesignAgent` holds Freesound with no `QuotaManager`; Guard 9 only knows `self.llm`/`self.embedder` (**V-79**). The enforced Gemini limit is `rpd=1500` against a measured **20** (**V-40**). `tpm` is declared and never checked (**V-43**). |
+| 9 · AI imagery needs human approval | An `Approval` row on the asset-selection gate, resolved by step ID | `test_ai_generated_asset_cannot_be_used_without_approval` **and** `test_ai_generated_asset_is_usable_once_a_human_approves_the_gate` | **Holds only by coincidence (V-25).** The AI flag is a `"_ai"` **substring** of a display string, and stage 13 re-searches a **different** candidate list than the one stage 12 approved. Not bypassable today only because `ASSET_SELECTION` is unconditionally `MANUAL`. The `Approval` row's actor is a client-supplied string on an unauthenticated API (**V-32**), and a bare `a` keypress writes it (**V-75**). **T-74**, **T-81**, **T-117**. |
+| 10 · Licenses enforced by a gate | `LicensePolicy.validate_asset_license` at asset discovery and storyboard cuts, over a canonicalized license identifier | `test_guard_6_policy_validation_methods_have_production_callers`, plus 19 parametrized dialect tests | Holds for the assets it sees — but stage 11 validates one search result and stage 13 renders **another** (**V-25**). |
+| R4 · No fixture reads as a fact, in any language | AST guard over Python fakes; text guard over `apps/web/src` and `apps/renderer/src` | `test_guard_7_*` and `test_guard_8_*` | **The guards do not scan `application/` (V-82).** Guard 1 covers seven `adapters/` subdirectories by name (ADR-0014's own scope). Both invented payloads found on 2026-09-05 — `ResearchAgent`'s fabricated source (**V-81**) and `ScriptAgent`'s placeholder (**V-67**) — are in `application/agents/`. **T-123.** |
+| R5/R8 · A failed gate action is never shown as a decision | `ApprovalQueue` surfaces the error and records nothing | `test_guard_8_gate_actions_do_not_report_success_on_failure` | Holds for the gate action itself. **A failed `GET /gates/pending` still renders as "No pending Gates"** and "Awaiting a human: 0" (**V-35**), and a failed `GET /topics` as "Topics: 0" (**V-36**). **T-84.** |
 
 Invariants **3** (inference and opinion are labelled) and **6** (no hidden global mutable state) are
 absent from this table because neither has an enforcing check that runs. `AssertionType` is required
@@ -287,6 +409,45 @@ here (**R10** — a policy with no failing case is decoration).
 
 Stated plainly, because a stub that is not named in this section is a stub that will be mistaken for
 a feature.
+
+**Added 2026-09-05 by the §19 verification — things that were absent without being written down
+anywhere:**
+
+- **Verification, in the sense the word implies.** The agent runs and writes a verdict; the verdict
+  is a substring match over a free string that defaults to `"verified"` (**V-58**, **T-103**).
+- **Any enforcement of the Research Profile.** `preferred_apis`, `source_allowlist` and
+  `source_tier_floor` have **no reader** anywhere in the tree. SPEC §9's source policy is declared
+  and unenforced, and every source is written `source_tier=PRIMARY` regardless (**V-41**, **V-80**).
+- **Any effect of the Focus on output.** `captured_focus` is read twice — as a string in the
+  idempotency hash, and by stage 1, whose result is discarded. `ScopeMode`'s three values behave
+  identically. ADR-0002's Wikidata Entity resolution does not exist (**V-42**, **V-77**).
+- **Any way to set the Active Focus.** `set_active_focus` has only test callers, so every Run
+  captures a `Focus` built in memory and never persisted (**V-37**). `focus` and `active_focus` are
+  empty in the application database.
+- **A persisted SoundTrack.** Stage 14 composes one and discards it; there is no table and the
+  renderer never receives it (**V-62**).
+- **A written impact index.** `record_claim_usage` has only test callers, so `claim_usages` is empty
+  for every Run and retraction impact cannot be computed (**V-48**). The previous wording here —
+  "beyond `claim_usages`" — read as though it worked.
+- **Any reader for the publishing schedule.** `save_window`, `get_windows`, `save_blackout_rule` and
+  `get_active_blackout_rules` have only test callers; `PublishScheduler` is an orphan. **ADR-0007 is
+  entirely unbuilt**, not partially (**V-47**).
+- **ADR-0001's operational half.** No reaper, no retry, no backoff, no dead-lettering, no stuck-Run
+  detection, no transactional enqueue, no `SKIP LOCKED` claiming; `DramatiqQueueBroker.enqueue`
+  discards its `step_name` (**V-45**).
+- **A deployment for the dashboard.** `pnpm -r build` produces `apps/web/dist/`; Compose runs no
+  service for it, Caddy has no static root and does not strip `/api`, and that prefix is removed by
+  the Vite dev server only. The operator interface exists under `pnpm dev` and nowhere else
+  (**V-52**).
+- **A worker that can start.** `dramatiq.set_broker` is called only in `tests/conftest.py` and
+  `redis` is not a dependency, so Compose's `worker` service fails at import — and
+  `ATLAS_QUEUE_BROKER=dramatiq` reproduces V-18 verbatim (**V-51**).
+- **Any authentication by default.** `api_auth_enabled` is `False`, and turning it on without setting
+  a key accepts **any** non-empty `X-API-Key` (**V-29**, **V-30**).
+- **Any contract check between the API and the dashboard.** Nothing asserts that
+  `apps/api/schemas.py` and `apps/web/src/api/types.ts` describe the same shapes (**V-53**).
+- **A test that commits.** Every integration test rolls back, so no test exercises durability,
+  cross-transaction visibility, or the rollback that destroys a failed Run (**V-50**, **V-20**).
 
 - **Rendering (SPEC Phase 7).** `StubRenderer` produces a flat ffmpeg colour field at the correct
   resolution for the requested target, with real captions computed from the persisted Timing Plan.
@@ -344,6 +505,27 @@ a feature.
 ## 4. Known gaps that are open by decision
 
 These are real and are not being hidden; each is recorded with the decision that left it open.
+
+**Opened by decision on 2026-09-05 (D144–D151):** the §19 verification found 70 defects and fixed
+none of them, deliberately — audit §18.0 rule 4 requires recording before fixing, and **D142** put
+verification ahead of implementation for exactly one session. Everything in audit §19 is therefore
+"known and open" as of today. Do not treat that as a decision to leave any of it: **§19.10 is the
+ordered list and position 0 is a two-line fix.** Four judgement calls inside that session are worth
+carrying:
+
+- **The ADRs are contradicted, not amended.** ADR-0012, ADR-0002, ADR-0003, ADR-0005 and ADR-0009
+  each describe behaviour the code does not have. None was edited: **R9** and the repository's own
+  rule say an ADR is superseded in writing, never quietly corrected, and a verification session does
+  not get to decide which side moves (**D147**). Tasks **T-29/T-30/T-88**, **T-118**, **T-125**,
+  **T-126**, **T-127**.
+- **The `a`-to-approve shortcut is recorded, not removed** (**D148**). It is deliberate — the button
+  advertises it — so changing it silently would overwrite a decision nobody wrote down. **T-117**
+  asks for the decision.
+- **V-49's schema drift is not fixed in a docs session** (**D149**). Adding three foreign keys to
+  non-empty tables is a migration with a lock, and **D106**'s precedent is that a documentation pass
+  does not change behaviour. **T-95**.
+- **The first pass's index claim was corrected in place and the correction was written down**
+  (**D150**), rather than the wrong text being deleted. Audit §19.8.
 
 - **Asset candidates are not persisted at stage 11.** Stage 13 re-searches, so the candidate list
   the operator approved at the stage 12 gate is not provably the list the storyboard drew from. The
@@ -403,87 +585,72 @@ These are real and are not being hidden; each is recorded with the decision that
 
 ## 5. Where to look next
 
-**The next session has one job, and it is not on the ordered list: `docs/AUDIT-2026-08-29.md` §18,
-the five-angle verification.** Bugs, Security, Experience, Functionality, then the end-to-end system
-assuming every test is fake. §18.0 is the standing rule; §18.1 is the measured shape to check these
-documents against; §18.7 says what to do with what is found. Do not implement features and do not
-work §15.9 until all five angles are written up.
+**The five-angle verification is done.** It ran on 2026-09-05 (audit **§19**), changed no code, and
+found **70 defects, V-20 – V-89**. The next session implements; it does not verify again.
 
-**Read order:** this file → `docs/AUDIT-2026-08-29.md` **§18** (the brief) → **§17** (the 2026-09-05
-session; defects **V-15** – **V-19**, every one found by using the system rather than by reading the
-register) → **§16** (the 2026-09-04 session; it carries defect **V-14**) → **§15** (what the second 2026-08-31
-verification found; **§15.9** is the live ordered work list, kept current, and **§15.8** is what not
-to do) → §14 and §13 for the sessions before → `docs/SPEC.md` §17 (**§17.11** is newest) →
-`docs/ARCHITECTURE.md` **§2.1** (the HTTP surface — the contract the dashboard codes against) and §11
-(**§11.7f** is newest) → the relevant ADR → the code.
+**Start at `docs/AUDIT-2026-08-29.md` §19.10 position 0 and work down.** That list supersedes §15.9.
+Its first ten, and why they are in that order:
 
-`docs/AUDIT-2026-08-29.md` is the authoritative register of what is broken. **§15.9 supersedes §14.2**
-as the ordered list — to be worked *after* the §18 verification, not before. Its first four, in short:
+| # | Task | Why first |
+|---|---|---|
+| 0 | **T-103** — the verification verdict is an enum, not a substring (**V-58**) | Two lines. A model answering `"unverified"` marks the claim VERIFIED, and a missing field does the same. It is the only path to that status and rendering gates on it. **Nothing else in this file that depends on a claim being verified is currently true.** Write the failing test first. |
+| 1 | **T-69** — a failed Run must survive (**V-20**) | P0 data loss on all three entry points, probed on two. A failed stage rolls back the `runs`, `steps`, `gates`, `model_calls` and `quota_ledger` rows. Every later session debugs blind until this is fixed. |
+| 2 | **T-113** — source text is data, not instructions (**V-71**, **V-72**) | P0. A hostile page writes its own claims and the verbatim guard passes them. T-103 is what stops them reaching VERIFIED; do the two together. |
+| 3 | **T-95** — close the schema drift, add `alembic check` to CI (**V-49**) | Three declared foreign keys are absent from the database. Do it before anything writes more rows. |
+| 4 | **T-78 + T-79** — fail closed; set the deployment posture (**V-29**, **V-30**) | P0 security, one boolean expression and one Compose change. **T-57 closes inside T-79** — the dashboard already sends the key, verified. |
+| 5 | **T-104 + T-105 + T-108** — the quality gate must measure (**V-59**, **V-60**, **V-65**) | The last gate before publish invents up to seven of eight scores and hardcodes two of six deterministic checks to `True`. |
+| 6 | **T-122 + T-121** — no invented source, no asserted tier (**V-81**, **V-80**) | R1/R2 broken in `application/`. Before T-123, which is written to fail until these are fixed. |
+| 7 | **T-123** — extend Guard 1 to `application/`, Guard 6 to `domain/` (**V-82**, **V-84**) | The detector cannot see the layer the last three fabrications were in. Needs an ADR amending ADR-0014's scope. |
+| 8 | **T-114** — the fetcher is an unrestricted SSRF primitive (**V-70**) | It is what makes T-113 reachable from outside a search result. |
+| 9 | **T-106** — `render_prompt` must not interpret backslashes (**V-61**) | A source containing `\1` crashes extraction today, probed. One line. |
 
-1. **T-67 — build the queue ADR-0001 decided, or supersede it.** Defects **V-18**/**V-19**, found
-   2026-09-05. No broker was ever configured, so no Run could be created by any entry point; the
-   wiring is honest now but there is still no queue, and ADR-0001's resume story has nothing to
-   re-enqueue to.
-2. **T-68 — the API must stop running the pipeline inside the request.** Depends on T-67.
-3. **T-61 — fit the Timing Plan, or amend ADR-0006.** Defect **V-14**, found 2026-09-04. The plan
-   accumulates where the ADR promises fitting; prompt-compliant scripts span 36–81 s against a
-   58–62 s gate with no repair path. **Do this before T-34** — the first real-provider run is exactly
-   where that spread meets that gate, on a 20-request daily budget. It was displaced by T-62 and
-   T-63 on 2026-09-05 for the reason **D135** records: it is a defect inside a Run that no operator
-   could start.
-4. **T-53 — the unreachable gate-stage branch.** Decide and document.
-5. **T-57 — consistent auth dependency on the API.** Two routes still carry no `verify_api_key` —
-   `GET /runs/{id}/steps` and `GET /runs/{id}/gates`, re-verified route by route on 2026-09-05. The
-   Pipeline tab added the same day is the first consumer of both, so closing T-57 breaks the
-   dashboard unless its client sends the key.
+**Read order:** this file → `docs/AUDIT-2026-08-29.md` **§19** (the register and the ordered list;
+**§19.7 is what held**, **§19.9 is what was not checked**) → **§18** (the brief that commissioned it,
+and §18.0's standing rule, which still applies) → **§17**, **§16**, **§15** (**§15.8** is what not to
+do) → §14, §13 → `docs/SPEC.md` §17 (**§17.12** is newest) → `docs/ARCHITECTURE.md` **§2.1** (the
+HTTP surface — verified correct on 2026-09-05 and unchanged) and §11 (**§11.7g** is newest) → the
+relevant ADR → the code.
 
-**T-64 is closed** (2026-09-05): the dashboard can create a Domain, Topic, Channel and Focus and
-launch a Run without a terminal. **T-66 is closed**: the two rows this session's own command
-overwrote are restored.
+**Five ADRs contradict the code and none has been amended** — that is deliberate (**D147**), and it
+is the largest single block of work on the list: ADR-0012 (**V-40**, five of six parts unbuilt, and
+the shipped model ID returns 404), ADR-0002 (**V-77**, four of seven decisions, one inverted),
+ADR-0003 vs ADR-0016 (**V-85**, **V-86**), ADR-0005 (**V-88**), ADR-0009 (**V-87**).
 
-**Do not start T-34** (the honest real-provider run) before **T-29**, **T-30** and now **T-58**. The
-Gemini free tier allows 20 requests a day and a correct run needs 6–9; that scarcity is the direct
-cause of the 2026-08-29 fabrication incident. Re-tiering onto Ollama first is what makes the attempt
-survivable, and cassettes are what make a failure inside a network adapter debuggable rather than a
-second session.
+**Do not start T-34** (the honest real-provider run) before **T-103**, **T-69**, **T-29**, **T-30**,
+**T-88**, **T-58**, **T-61** and **T-113**. Two reasons beyond the original one: the model ID Atlas
+would call is retired and returns **404** (**V-40**), and a run that fails leaves **no record at
+all** (**V-20**), so the scarce budget would be spent for nothing recoverable.
 
-### What this session did **not** do, so you do not go looking
+### What the 2026-09-05 verification session did **not** do, so you do not go looking
 
-- **No real-provider run, and no real-provider call of any kind.** No Gemini, Ollama or Freesound
-  request was made from the pipeline or from anywhere else. Stage 1 was spending Gemini quota
-  unmetered until **V-02** was fixed, so `quota_ledger` cannot tell you today's remaining budget —
-  start T-34 from a re-measured ledger, not from the table in §0.
-- **No Run has ever been created through the fixed path.** V-18's fix removed the last obstacle
-  between `POST /runs` and stage 1, which calls Gemini for real. Creating one is **T-34**, an
-  operator decision, not a verification step.
-- **`docker compose up` was not run, and its `worker` service now runs nothing reachable.** With
-  `queue_broker=inline`, `apps/worker/` is referenced only by `DramatiqQueueBroker`'s lazy import,
-  which nothing resolves by default. Audit §17.8, task **T-67**.
-- **Ollama is not running on this machine.** `OllamaEmbedder` fails at stage 13 against a live
-  container unless the daemon is up. The URL is configuration now (`OLLAMA_URL`), so point it at
-  wherever the daemon actually is.
-- **`docker compose up` was never run to completion.** `docker compose config` validates and the
-  `Dockerfile` is new and unbuilt. Expect to debug the image once, not to have it work first try.
-- **`alembic upgrade head` was not run locally against a fresh `atlas` database.** §0 says which
-  weaker commands produced the 7 and the 30 instead. CI runs the real thing.
-- **No verification pass.** The registers were reconciled against the code — narrower than audit
-  §15's re-measurement, which was not repeated. `ARCHITECTURE.md` §2.1 *was* re-checked against
-  `app.openapi()` route by route, including the auth column.
-- **V-14 was found, not fixed.** See §4 and **D134**. It is still task **T-61**, now third behind
-  the queue defects.
-- **No Run was created through the fixed path.** The enqueue was the last thing between a request
-  and stage 1, which calls Gemini for real — 6–9 requests against a 20-a-day budget, on a pipeline
-  that can still be rejected at stage 17 (**V-14**). That is **T-34** and it is an operator
-  decision, not a verification step. The broker fix is covered by
-  `tests/integration/test_queue_broker_wiring.py`, which calls the broker the production container
-  actually resolves.
-- **No Run was created against real providers**, deliberately. The Topic that was created by hand
-  makes `POST /runs` succeed now, and succeeding means stage 1 spends Gemini quota — that is
-  **T-34**, and it stays sequenced behind T-29, T-30 and T-58.
-- **No HTTP route was added or changed**, so `ARCHITECTURE.md` §2.1 is untouched and still lists 11
-  paths / 12 operations. Only exception handlers were added.
-- **CI is blocking but not unbypassable.** `enforce_admins` is false; an administrator can override
-  the required check.
+Copied from audit §19.9. Absence here is not clearance.
+
+- **No provider call of any kind**, deliberately (§18.0 rule 5). No Gemini, Ollama, Freesound,
+  Wikipedia, Wikimedia, Internet Archive or plain HTTP request was made from any code path. The seven
+  network-backed adapters remain verified only by hand (**T-58**), and four of them —
+  `adapters/search/wikipedia.py`, `adapters/images/*`, `adapters/audio/freesound.py`,
+  `adapters/llm/ollama.py` — **were not even read**, so V-70's SSRF analysis covers `HttpSourceFetcher`
+  only.
+- **No browser walkthrough against a live API.** Angle 3 was done by reading every component and
+  running the mocked Playwright suite. The empty-database walkthrough — T-64's own *Done when* — is
+  still owed (**T-87**).
+- **`docker compose up` was not run.** V-51 and V-52 are read from the Compose file, the Caddyfile,
+  the Vite config and the absence of a `set_broker` call. Running it is the cheapest test of both.
+- **Two ADRs were not read end to end** — 0011 and 0015, their Decision sections only. Ten were read
+  in full. The last two read (0002, 0016) produced five divergences between them, so **§18.5's
+  *Done when* — "every ADR read against its implementation" — is not met.**
+- **`domain/` is partially audited.** `agents/models.py`, `quality/models.py`, `script/models.py`'s
+  timing types, `knowledge/invariants.py` and `knowledge/upcast.py` were read.
+  `domain/media/models.py`, `domain/assets/models.py`, `domain/publishing/models.py` and
+  `domain/execution/models.py` were not read end to end.
+- **`apps/renderer/` and `packages/tokens/` were not reviewed** beyond confirming they build and that
+  the renderer imports the token package (which `apps/web` does not — **V-88**).
+- **No performance or load measurement.** V-26's event-loop claim is from reading, not timing.
+- **No fix was attempted and no test was written.** Every task in audit §19.10 is unstarted, and the
+  70 findings are recorded, not remediated.
+- **A `pytest-cov` measurement was not possible** — the package is not installed. The "which modules
+  no test touches" sweep in audit §19.6 is a name-based grep and is explicitly weaker than coverage;
+  it reproduced the known T-58/T-28 set plus `apps/cli/backup_restore.py`.
 
 ### Session close-out checklist
 
@@ -521,3 +688,16 @@ and the result was a document that read as truth.
 - [ ] **If you wrote a row to the local `atlas` database by hand, record what it was and whether it
       overwrote anything** (**R11**). This session destroyed two rows of operator configuration with
       its own new command and only noticed by reading them back (**V-17**).
+- [ ] **Run `uv run alembic check` and act on the result.** It fails today (**V-49**). Once **T-95**
+      lands, a failure means your change drifted the models from the migrations — fix it in the same
+      commit, and do not let the noise of nine redundant `index=True` flags hide a real one.
+- [ ] **If you touched an agent, ask what it does when the model returns something unexpected.**
+      Four of the nine agents were found on 2026-09-05 to default, invent or substring-match their
+      way past a bad response (**V-58**, **V-59**, **V-60**, **V-81**). A Pydantic field with a
+      permissive type and a favourable default is the shape to look for.
+- [ ] **If you added a `validate_*` or `enforce_*` function, put it where a guard can see it.**
+      Guard 1 scans seven `adapters/` subdirectories; Guard 6 scans `application/policies/` only.
+      A policy outside those directories is invisible to both (**V-82**, **V-84**).
+- [ ] **Before writing "verified", "complete" or "enforced" in this file, name the test that would
+      fail if you deleted the mechanism — and check that test does not run against a fake that makes
+      it true by construction.** On 2026-09-05 that question retired four claims in §2.
