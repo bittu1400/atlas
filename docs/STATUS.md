@@ -153,8 +153,11 @@ gates, approvals, resource locks, idempotency keys and the quota ledger. A Run t
 against fakes, suspends at each of the six manual/hybrid gates, and resumes.
 
 **Phase 4 · Frontend + CLI** — CLI parity is real and tested. The dashboard (`apps/web`) builds and
-now reads the API: Runs, pending Gates, quota, and two endpoints added in this session
-(`/runs/{id}/knowledge`, `/runs/{id}/telemetry`). Every panel renders a database row or an error —
+reads the API across six tabs: Dashboard (summary tiles, Launch form, Runs), **Catalog** (Domains,
+Topics, Channels, Focuses — listed and created), Approval Queue, **Pipeline** (the Run's Step rows
+and the Gate holding each), Knowledge, and Telemetry & Quota. The last two tabs were added on
+2026-09-05 with **T-64**; `RunPipeline` is the first consumer `GET /runs/{id}/steps` and
+`GET /runs/{id}/gates` have ever had — both routes existed unread since Phase 3. Every panel renders a database row or an error —
 until 2026-08-31 five of its components rendered invented claims, invented snapshot hashes and an
 invented telemetry feed, and its API client answered an unreachable backend with fabricated Runs and
 a fabricated passing quality report (defect **V-03**, audit §15.4). **Browser testing is real and verified
@@ -176,6 +179,18 @@ two HTTP tests assert the 404 bodies. Verified by hand against the running serve
 original 500. **What this does not do** is give the dashboard the same ability — the three commands
 have no HTTP route, so an operator must use the terminal once (**T-64**), which makes SPEC §1's
 "full CLI parity" claim false in the CLI's favour.
+
+**The dashboard is self-sufficient (T-64, D140 aside).** Eight routes — `GET`/`POST` for
+`/domains`, `/topics`, `/channels` and `/focuses` — sit over four new repository listing methods and
+five use cases, taking the HTTP surface from 11 paths / 12 operations to **15 / 20**
+(`ARCHITECTURE.md` §2.1, verified row-by-row against `app.openapi()`). The Launch form's three
+free-text boxes are pickers; a duplicate ID is a 409 and an unknown Domain a 404, neither an
+overwrite nor a 500. `GET /focuses` resolves the Active Focus pointer against the list, because a
+Run created without an explicit Focus captures the active one by value (Invariant 6). Ten browser
+tests assert the pickers list exactly what the API returned, that an empty table renders as empty,
+and that a refused creation is shown as a refusal.
+**What is not verified:** the empty-database walkthrough in T-64's own *Done when* — every check so
+far ran against a database migration `0001` had already seeded. See audit §18.4.
 
 **A Timing Plan can no longer overstate its own duration (T-20, D129).**
 `TimingPlan.total_duration_seconds` was a plain field defaulting to `60.0`; a plan carrying 3.5
@@ -223,7 +238,7 @@ work is recounted rather than lost.
 | 1 · Architecture | Spec, architecture, glossary, ADRs | Phase 1 (Architecture) | **complete** |
 | 2 · Database | Schema, migrations, KO versioning, repositories | Phase 2 (Database & Persistence) | **complete** |
 | 3 · Backend | FastAPI, worker, Run/Step state machine, gates, quota | Phase 3 (+ 3.1 remediation) | **complete** |
-| 4 · Frontend + CLI | Dashboard shell, approval queue, CLI parity | Phase 4 (Frontend + Remotion Renderer) | **CLI complete. Dashboard reads the API and renders no fixtures, but no test drives a browser (T-55) and the approval queue cannot show the artifact under review (T-59).** The renderer half of the old name was never Phase 4 work. |
+| 4 · Frontend + CLI | Dashboard shell, approval queue, CLI parity | Phase 4 (Frontend + Remotion Renderer) | **CLI complete. Dashboard reads the API across six tabs, renders no fixtures, and is covered by 10 browser tests. An operator can create a Domain, Topic, Channel and Focus and launch a Run without a terminal (T-64).** Still missing: the approval queue cannot show the artifact under review (**T-59**), and no Research Profile or Style Profile can be edited. The renderer half of the old name was never Phase 4 work. |
 | 5 · Agents | Research, extraction, verification, script, judge | Phase 5 (Agents & Intelligence Engine) | **complete** |
 | 6 · Knowledge system | Graph, Entity binding, novelty, impact index | *no old equivalent* | **not started.** `application/policies/` holds only gate, license and quota policy. |
 | 7 · Rendering | Remotion compositions, sound design, both targets | Phase 7 (End-to-End Execution) — fabricated | **not started.** Deferred by D57; the data path into the renderer is proven (ADR-0016). |
@@ -388,28 +403,43 @@ These are real and are not being hidden; each is recorded with the decision that
 
 ## 5. Where to look next
 
-**Read order for the next session:** this file → `docs/AUDIT-2026-08-29.md` **§17** (the 2026-09-05
-session; defects **V-15** and **V-16**, both found by using the system rather than by reading the
+**The next session has one job, and it is not on the ordered list: `docs/AUDIT-2026-08-29.md` §18,
+the five-angle verification.** Bugs, Security, Experience, Functionality, then the end-to-end system
+assuming every test is fake. §18.0 is the standing rule; §18.1 is the measured shape to check these
+documents against; §18.7 says what to do with what is found. Do not implement features and do not
+work §15.9 until all five angles are written up.
+
+**Read order:** this file → `docs/AUDIT-2026-08-29.md` **§18** (the brief) → **§17** (the 2026-09-05
+session; defects **V-15** – **V-19**, every one found by using the system rather than by reading the
 register) → **§16** (the 2026-09-04 session; it carries defect **V-14**) → **§15** (what the second 2026-08-31
 verification found; **§15.9** is the live ordered work list, kept current, and **§15.8** is what not
 to do) → §14 and §13 for the sessions before → `docs/SPEC.md` §17 (**§17.11** is newest) →
 `docs/ARCHITECTURE.md` **§2.1** (the HTTP surface — the contract the dashboard codes against) and §11
-(**§11.7e** is newest) → the relevant ADR → the code.
+(**§11.7f** is newest) → the relevant ADR → the code.
 
 `docs/AUDIT-2026-08-29.md` is the authoritative register of what is broken. **§15.9 supersedes §14.2**
-as the ordered list. Its first three, in short:
+as the ordered list — to be worked *after* the §18 verification, not before. Its first four, in short:
 
-1. **T-61 — fit the Timing Plan, or amend ADR-0006.** Defect **V-14**, found 2026-09-04. The plan
+1. **T-67 — build the queue ADR-0001 decided, or supersede it.** Defects **V-18**/**V-19**, found
+   2026-09-05. No broker was ever configured, so no Run could be created by any entry point; the
+   wiring is honest now but there is still no queue, and ADR-0001's resume story has nothing to
+   re-enqueue to.
+2. **T-68 — the API must stop running the pipeline inside the request.** Depends on T-67.
+3. **T-61 — fit the Timing Plan, or amend ADR-0006.** Defect **V-14**, found 2026-09-04. The plan
    accumulates where the ADR promises fitting; prompt-compliant scripts span 36–81 s against a
    58–62 s gate with no repair path. **Do this before T-34** — the first real-provider run is exactly
    where that spread meets that gate, on a 20-request daily budget. It was displaced by T-62 and
    T-63 on 2026-09-05 for the reason **D135** records: it is a defect inside a Run that no operator
    could start.
-2. **T-53 — the unreachable gate-stage branch.** Decide and document.
-3. **T-57 — consistent auth dependency on the API.** Two routes are missing `verify_api_key` —
-   `GET /runs/{id}/steps` and `GET /runs/{id}/gates`, verified route by route on 2026-09-04.
-4. **T-64 — HTTP equivalents for the three catalogue commands.** New 2026-09-05; until it lands the
-   dashboard cannot bootstrap itself.
+4. **T-53 — the unreachable gate-stage branch.** Decide and document.
+5. **T-57 — consistent auth dependency on the API.** Two routes still carry no `verify_api_key` —
+   `GET /runs/{id}/steps` and `GET /runs/{id}/gates`, re-verified route by route on 2026-09-05. The
+   Pipeline tab added the same day is the first consumer of both, so closing T-57 breaks the
+   dashboard unless its client sends the key.
+
+**T-64 is closed** (2026-09-05): the dashboard can create a Domain, Topic, Channel and Focus and
+launch a Run without a terminal. **T-66 is closed**: the two rows this session's own command
+overwrote are restored.
 
 **Do not start T-34** (the honest real-provider run) before **T-29**, **T-30** and now **T-58**. The
 Gemini free tier allows 20 requests a day and a correct run needs 6–9; that scarcity is the direct
@@ -419,9 +449,16 @@ second session.
 
 ### What this session did **not** do, so you do not go looking
 
-- **No real-provider run.** No Gemini, Ollama or Freesound call was made from the pipeline. Stage 1
-  was spending Gemini quota unmetered until **V-02** was fixed, so `quota_ledger` cannot tell you
-  today's remaining budget — start T-34 from a re-measured ledger, not from the table in §0.
+- **No real-provider run, and no real-provider call of any kind.** No Gemini, Ollama or Freesound
+  request was made from the pipeline or from anywhere else. Stage 1 was spending Gemini quota
+  unmetered until **V-02** was fixed, so `quota_ledger` cannot tell you today's remaining budget —
+  start T-34 from a re-measured ledger, not from the table in §0.
+- **No Run has ever been created through the fixed path.** V-18's fix removed the last obstacle
+  between `POST /runs` and stage 1, which calls Gemini for real. Creating one is **T-34**, an
+  operator decision, not a verification step.
+- **`docker compose up` was not run, and its `worker` service now runs nothing reachable.** With
+  `queue_broker=inline`, `apps/worker/` is referenced only by `DramatiqQueueBroker`'s lazy import,
+  which nothing resolves by default. Audit §17.8, task **T-67**.
 - **Ollama is not running on this machine.** `OllamaEmbedder` fails at stage 13 against a live
   container unless the daemon is up. The URL is configuration now (`OLLAMA_URL`), so point it at
   wherever the daemon actually is.
@@ -472,4 +509,15 @@ and the result was a document that read as truth.
       an API and rendered fixtures for a phase (**V-03**, **D122**).
 - [ ] **If you touched `apps/web` or `apps/renderer`, run `uv run pytest` — not just `pnpm build`.**
       Guards 8 and 9 live in the Python suite on purpose (ADR-0017); a front-end change that
-      introduces a fixture fails there and nowhere else.
+      introduces a fixture fails there and nowhere else. Run `pnpm test` too: the browser suite is
+      the only thing that proves a panel renders a row rather than a literal.
+- [ ] **Before claiming a subsystem works, name the test that would fail if you deleted it.** If
+      there is none, the subsystem is unverified however green the suite is (**R10**). Four defects
+      — V-01, V-04, V-14, V-18 — passed hundreds of tests each.
+- [ ] **After changing an adapter the production `Container` wires, check a test resolves the real
+      `Container`.** Only `tests/integration/test_production_adapters.py` and
+      `test_queue_broker_wiring.py` do. Everything else substitutes a fake, which is how a broker
+      that could not be called shipped green (**V-18**).
+- [ ] **If you wrote a row to the local `atlas` database by hand, record what it was and whether it
+      overwrote anything** (**R11**). This session destroyed two rows of operator configuration with
+      its own new command and only noticed by reading them back (**V-17**).
