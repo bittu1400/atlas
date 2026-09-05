@@ -53,8 +53,11 @@ class FocusRepository:
     async def get_domain(self, domain_id: str) -> Domain | None:
         """Fetch Domain by ID."""
         row = await self.session.get(DomainTable, domain_id)
-        if not row:
-            return None
+        return self._to_domain(row) if row else None
+
+    @staticmethod
+    def _to_domain(row: DomainTable) -> Domain:
+        """Map one row, in one place, so the single fetch and the listing cannot drift."""
         profile_data = dict(row.research_profile)
         if "source_tier_floor" in profile_data:
             profile_data["source_tier_floor"] = SourceTier(profile_data["source_tier_floor"])
@@ -64,6 +67,11 @@ class FocusRepository:
             description=row.description,
             research_profile=ResearchProfile(**profile_data),
         )
+
+    async def list_domains(self) -> list[Domain]:
+        """List every Domain, by name, for an operator choosing one."""
+        rows = (await self.session.execute(select(DomainTable).order_by(DomainTable.id))).scalars()
+        return [self._to_domain(row) for row in rows]
 
     # =========================================================================
     # Entities
@@ -134,16 +142,29 @@ class FocusRepository:
         row = await self.session.get(FocusTable, focus_id)
         if not row:
             raise FocusNotFoundError(focus_id)
-        facets = [Facet(**f) for f in (row.facets or [])]
+        return self._to_focus(row)
+
+    @staticmethod
+    def _to_focus(row: FocusTable) -> Focus:
+        """Map one row, in one place, so the single fetch and the listing cannot drift."""
         return Focus(
             id=row.id,
             name=row.name,
             scope_mode=ScopeMode(row.scope_mode),
-            facets=facets,
+            facets=[Facet(**f) for f in (row.facets or [])],
             entity_id=row.entity_id,
             actor_id=row.actor_id,
             created_at=row.created_at,
         )
+
+    async def list_focuses(self) -> list[Focus]:
+        """List every Focus, newest first. The Active Focus pointer is resolved above this."""
+        rows = (
+            await self.session.execute(
+                select(FocusTable).order_by(FocusTable.created_at.desc(), FocusTable.id)
+            )
+        ).scalars()
+        return [self._to_focus(row) for row in rows]
 
     # =========================================================================
     # Active Focus Pointer

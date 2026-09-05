@@ -6,6 +6,10 @@
 This document defines *what Atlas does* and *what correct means*. `docs/ARCHITECTURE.md` defines how it
 is built. Where behaviour and code disagree, this document is right and the code is a defect.
 
+> **2026-08-29 —** That last sentence has never been checked. See **§17** for every place the code
+> currently disagrees with this spec, and `docs/AUDIT-2026-08-29.md` for why the check was overdue.
+> This document is unchanged; §17 records the defects, it does not amend the spec.
+
 ---
 
 ## 1. Thesis
@@ -131,28 +135,47 @@ Failure mode that must be handled, not hidden: a Focus too narrow to yield candi
 
 ## 6. Pipeline
 
-Gate policy shown is the Phase 1 default for ORIGINS. Every gate is switchable to `automatic`,
-`manual`, or `hybrid` from the dashboard and the CLI.
+**Eighteen stages.** Gate policy shown is the Phase 1 default for ORIGINS and is the literal content
+of `DEFAULT_STAGE_GATES` in `application/policies/gate_policy.py`; the order is the literal content of
+`STAGE_SEQUENCE` in `application/pipeline/runner.py`. **Updated 2026-08-31 (T-39, D101):** this table
+previously listed 17 stages and disagreed with the code, which splits "Script" into generation and
+approval. The code's split is the better shape and is adopted here.
 
-| # | Stage | Produces | Gate |
-|---|---|---|---|
-| 1 | Idea Discovery | Candidate Topics within Focus | automatic |
-| 2 | Topic selection | An approved Topic | **manual** |
-| 3 | Research | Sources + Snapshots (Tier 0 only, no model calls) | automatic |
-| 4 | Claim extraction | Claims with Evidence locators | automatic |
-| 5 | Fact verification | Verification verdicts, contradictions surfaced | hybrid — manual on `contested` |
-| 6 | Knowledge Object | A versioned KO | **manual** |
-| 7 | Story angle | Ranked angles, one selected | hybrid — Atlas proposes, operator picks |
-| 8 | Script | Beats, each carrying Claim IDs | **manual** |
-| 9 | Timing Plan | Fitted schedule for the target duration | automatic |
-| 10 | Asset discovery | Candidate archival stills, license-resolved | automatic |
-| 11 | Asset selection | Chosen Assets | **manual** — always manual for AI-generated |
-| 12 | Storyboard | Beat-to-Scene pairing with motion treatment | automatic |
-| 13 | Sound design | SFX and music layers aligned to the Timing Plan | automatic |
-| 14 | Render | One Render per Render Target | automatic |
-| 15 | Quality check | Quality Report | automatic, **hard gate** |
-| 16 | Final approval | Publishable artifact | **manual** |
-| 17 | Publish | *Phase 1: manual export. Interface stubbed.* | — |
+| # | `PipelineStage` | Produces | Gate | Suspends? |
+|---|---|---|---|---|
+| 1 | `IDEA_DISCOVERY` | Candidate Topics within Focus | automatic | no |
+| 2 | `TOPIC_SELECTION` | An approved Topic | **manual** | always |
+| 3 | `RESEARCH` | Sources + Snapshots (Tier 0 only, no model calls) | automatic | no |
+| 4 | `CLAIM_EXTRACTION` | Claims (`unverified`) with verbatim Evidence, Knowledge Object v1 | automatic | no |
+| 5 | `FACT_VERIFICATION` | Verification verdicts, contradictions surfaced | hybrid | only when a Claim is `contested` |
+| 6 | `KNOWLEDGE_OBJECT` | A versioned KO the operator has seen | **manual** | always |
+| 7 | `STORY_ANGLE` | Operator consent to proceed to scripting | hybrid | always |
+| 8 | `SCRIPT_GENERATION` | The selected Story Angle, the Script, and its Timing Plan — **persisted** | automatic | no |
+| 9 | `SCRIPT_APPROVAL` | Operator approval of that Script | **manual** | always |
+| 10 | `TIMING_PLAN` | Validation and publication of the persisted Timing Plan's ID | automatic | no |
+| 11 | `ASSET_DISCOVERY` | Candidate archival stills, license-resolved | automatic | no |
+| 12 | `ASSET_SELECTION` | Chosen Assets | **manual** — always manual for AI-generated | always |
+| 13 | `STORYBOARD_CUTS` | Beat-to-Scene pairing with motion treatment — **persisted** | automatic | no |
+| 14 | `SOUND_DESIGN` | SFX and music layers aligned to the Timing Plan | automatic | no |
+| 15 | `REMOTION_RENDER` | One Render Artifact per Render Target — **persisted** | automatic | no |
+| 16 | `QUALITY_CHECK` | Quality Report | automatic, **hard gate** | no |
+| 17 | `FINAL_APPROVAL` | Publishable artifact | **manual** | always |
+| 18 | `PUBLISH` | External publication IDs | automatic | no |
+
+**Where the Story Angle is actually chosen.** Stage 7 is a gate, and a suspending stage runs no
+handler — so the operator's decision at stage 7 is "proceed to scripting", not "approve this angle".
+The angle itself is selected at stage 8 by `ScriptAgent.select_story_angle` from the verified Claims,
+and stored on the Script. Making stage 7 approve a *named* angle requires a change to gate mechanics
+and is deliberately not done (**D92**). Recorded here so the table is not read as more than it is.
+
+**Stage 15 is named `REMOTION_RENDER` while the renderer is a stub.** The stage name describes the
+intended implementation and appears in `steps.step_name` rows already written, so renaming it is a
+data migration for no behavioural gain. The *adapter* is honestly named `StubRenderer` (rule R3,
+**D96**), and `docs/STATUS.md` §3 says rendering does not exist.
+
+**Stage hand-off.** Every stage writes what it produced into `steps.output_artifact_ref`, and later
+stages read it. No stage regenerates an artifact an earlier stage already made — that was defect
+R-02 and is now structurally prevented by **ADR-0016**.
 
 A Run suspended at a gate persists indefinitely and resumes exactly where it stopped. Suspension is a
 row in a table, not a held process.
@@ -426,3 +449,220 @@ Non-blocking, needed before the phase noted.
 - **Quality threshold of 78** — provisional, to be re-fixed after judge calibration.
 - **Backup and restore** — Postgres PITR plus a portable export bundle; required before the first
   published video, since knowledge is the product and it is irreplaceable.
+
+---
+
+## 17. Implementation divergence register
+
+**Added 2026-08-29.** Sections 1–16 are unchanged and remain product truth. This section records
+where the code on disk disagrees with them. Per the header rule, **every row below is a defect in
+the code, not a correction to the spec.** Defect IDs refer to `docs/AUDIT-2026-08-29.md` §3.
+
+Verified against HEAD `9938244`. **Re-verified 2026-08-29 (Stage C remediation session, audit §11)**
+against HEAD `c776b59` plus the working tree: **no row changed.** That session's work (T-43, T-44,
+T-45, T-51, T-52) removed fabricated fixture text, added the anti-fabrication guard, and made
+Knowledge Object assembly refuse untraceable Claims — all of which move the code **towards** §1–16,
+not away from it, and none of which touches a divergence recorded here.
+
+**Re-verified 2026-08-31** (independent verification session, audit §13), against commit `714cade`
+and the documentation pass that followed it, on a clean tree. **§17.1 is closed** (T-39: §6 adopts the 18-stage split). **§17.2 is closed in
+full.** **§17.3 and §17.4 are partially closed.** **§17.5's duration bound (R-04) is narrowed but
+still open.** Each row below says which side changed.
+
+### 17.1 Pipeline stage count and numbering (§6) — **CLOSED 2026-08-31 (T-39, D101)**
+
+§6 listed 17 stages; `STAGE_SEQUENCE` has 18, splitting "Script" into `SCRIPT_GENERATION`
+(automatic) and `SCRIPT_APPROVAL` (manual). **The doc changed:** §6 now transcribes
+`STAGE_SEQUENCE` and `DEFAULT_STAGE_GATES` directly, eighteen rows, with the gate and the
+suspend-or-not behaviour of each. `docs/STATUS.md` also says 18. All three agree.
+
+### 17.2 Gate policy (§6)
+
+**Updated 2026-08-29 (Stage C review, D71).** The stage 5 and stage 7 rows were **deleted**: after
+T-37, `DEFAULT_STAGE_GATES` sets both to `HYBRID`, the runner passes `has_contested_claims` and
+`has_ai_generated_assets`, and no branch in `gate_policy.py` is unreachable. Per **D55** a row is
+deleted only when the code matches the doc.
+
+**Updated 2026-08-31.** The stage 12 row is **closed**; the publish row is **partially closed** and
+renumbered to 18 to match §6. The section is kept as the record of what was wrong and which side
+moved.
+
+| Spec stage | Spec gate | `DEFAULT_STAGE_GATES` in code | Divergence |
+|---|---|---|---|
+| 11 · Asset selection | **manual**, always manual for AI-generated | `MANUAL`, forced `MANUAL` when an AI asset is present | **Closed 2026-08-31 (defects SC-03, B1).** The check runs at `STORYBOARD_CUTS` and resolves the asset-selection gate by its deterministic step ID, then requires an `Approval` row with `decision == approved` — `ExecutionRepository.list_approvals_for_run` was added for it. A gate row flipped to `approved` with no Approval is not approval. Both directions are tested: an unapproved AI asset fails the run, an approved one renders. |
+| 18 · Publish | "Phase 1: manual export. Interface stubbed." | `AUTOMATIC` | **Partially closed 2026-08-31 (defect R-03). Code changed:** the stage now loads the persisted Render Artifacts and calls `Publisher.publish` once per artifact, recording the returned IDs in `steps.output_artifact_ref`; with no publisher wired it raises `PublisherNotConfiguredError` rather than returning success. **Still open:** the publisher is `StubPublisher`, so a completed Run has published nothing real — it returns `stub:<artifact-id>` — and the stage does not consult `PublishScheduler` or the blackout rule. T-21's remaining bar is that a stub publisher must fail the stage loudly; see **D102** for why that was not done in the same change. |
+
+
+
+### 17.3 Approval semantics (§7) — partially closed 2026-08-31
+
+> "Approval records the actor, the timestamp, and the artifact version approved."
+
+The `approvals` table records `actor_id` and `created_at`. It still records **no artifact version**,
+and neither does `gates` (defect R-10, task **T-25**). **Open.**
+
+**The second half of this row is closed. Code changed:** the script is no longer regenerated at five
+stages (defect R-02, ADR-0016), so the artifact a human approved *is* the artifact that proceeds. It
+is now derivable — a gate names a `step_id`, and the `SCRIPT_GENERATION` step for the same Run names
+the Script ID — but derivable is not recorded, and a stale approval after a rework is still not
+detectable. T-25 remains the fix.
+
+### 17.4 Source policy (§9) and provider ladder (§11)
+
+- §11 / ADR-0004: "Retrieval never consumes Tier 2. A fact absent from Tier 0 is not obtained by
+  asking a model." Honoured in the routing table. **Violated in practice on 2026-08-29** by the
+  hardcoded-payload incident, where facts came from neither Tier 0 nor a model.
+- ~~The production container wires `FakeSearch` and `FakeSourceFetcher` for Tier 0 retrieval
+  (defect C-01). Real `WikipediaSearch` and `HttpSourceFetcher` exist and are unwired (C-02).~~
+  **Closed 2026-08-31 (D97). Code changed:** the container wires `WikipediaSearch` and
+  `HttpSourceFetcher`, and imports nothing from `adapters/fakes/`. **Caveat, stated plainly:** the
+  wiring is verified by a guard test, not by a network run. No Run has yet fetched a real URL, so
+  T-26's "a snapshot whose bytes came off the network" is **not** demonstrated — that is **T-34**.
+- Tier assignments in §11 are amended by **ADR-0012** (Tier 1 becomes primary; Tier 2 reserved for
+  fact verification) after measurement showed the Gemini free tier allows 20 requests/day.
+- §11 / ADR-0004: "Every call is metered before it is issued", over "persisted token buckets shared
+  across workers". **Both halves were false until 2026-08-31 (defects V-02, V-04). Code changed:**
+  stage 1's topic-discovery call and stage 13's two embedding calls had no `QuotaManager` at all,
+  and `check_rate_limits` counted in process memory while never reading the `quota_ledger` rows it
+  wrote — so every CLI invocation and every worker process began with a full daily budget. Both
+  agents now meter, and the windows are computed from the ledger (**D109**, **D110**, **D115**).
+
+### 17.5 Quality (§8)
+
+- §8.3 deterministic checks: **CLOSED 2026-09-04 (defect R-04, task T-20, D129). Code changed.**
+  `TimingPlan.total_duration_seconds` is no longer a field with a default — it is computed from the
+  beat timings, so no plan, from any caller, can state a duration its own timeline does not support.
+  The 58–62 s check now measures something.
+- §8.3, **new divergence opened by the row above (defect V-14, task T-61).** Closing R-04 made a
+  larger absence visible: **nothing in Atlas makes a Script's duration land inside 58–62 s.**
+  ADR-0006 §2 promises fitting — solve per-Beat hold for a total within ±2 s of target, fail loudly
+  and route back to the Script stage when infeasible. `_compute_timing_plan` accumulates instead: one
+  pass summing `beat.duration_seconds`, no target, no solve, no repair path. The prompt asks for
+  12–18 beats of 3.0–4.5 s, which spans **36 s to 81 s**, so a fully prompt-compliant script can be
+  rejected at stage 17 with no stage able to fix it. Invisible so far because `FakeLlm` returns
+  exactly 15 beats × 4.0 s = 60.0 s: the fixture hits the bound by construction and the suite passes
+  over a mechanism that does not exist. **Open**, **T-61**, and sequenced **before T-34**.
+- §8.1 rubric: eight dimensions, implemented and enforced by Pydantic. Correct.
+- §8.4 calibration and the golden set do not exist. This blocks ADR-0012's quality measurement.
+
+### 17.6 Phase numbering (§15) — the documents use different phase numbers
+
+This is the most confusing divergence in the repository and must be resolved before the next
+session plans anything.
+
+| Phase | §15 of this spec | `docs/STATUS.md` claims | Built? |
+|---|---|---|---|
+| 4 | Frontend + CLI | Frontend + Remotion Renderer | Frontend yes; renderer is an ffmpeg blue rectangle (C-03) |
+| 5 | Agents | Agents & Intelligence Engine | Agents exist; two violate the invariants they enforce (D-02, D-04) |
+| 6 | **Knowledge system** — graph, Focus, Entity binding, novelty, impact index | **Production Pipeline Integration** — a different deliverable entirely | Spec's Phase 6 was **never built**: no graph, no novelty policy, no impact index in `application/policies/` |
+| 7 | **Rendering** — Remotion compositions, sound design, both targets | **End-to-End Execution** | Spec's Phase 7 was never built; STATUS's Phase 7 was fabricated (ADR-0011) |
+| 8 | Publishing | — | Not built |
+
+`docs/STATUS.md` silently renumbered the phases and then declared the renumbered ones complete. The
+spec's Phase 6 (knowledge system: novelty detection, entity binding, claim impact index, graph) has
+**no implementation at all** — `application/policies/` contains only `gate_policy.py`,
+`license_policy.py` and `quota_policy.py`.
+
+**Decided 2026-08-29 (D58):** adopt **this spec's** numbering, and add a table to `docs/STATUS.md`
+mapping the old STATUS phase names onto these phases so the Phase-6 adapter work is recounted rather
+than lost. Audit tasks **T-38** (reconcile) then **T-31** (rewrite STATUS), in that order.
+
+**Done 2026-08-31 (T-38, T-31).** `docs/STATUS.md` was rewritten from measurement and uses this
+section's numbering; its §2.1 carries the mapping table. The 2026-08-29 STATUS body is archived
+unchanged at `docs/archive/STATUS-2026-08-29.md` under rule R11. The table above stays as the record
+of the confusion, with one correction: SPEC's Phase 5 row said "two agents violate the invariants
+they enforce (D-02, D-04)" — both are closed (T-13, T-14), and the pipeline now runs all 18 stages
+against fakes. SPEC's Phase 6 and Phase 7 remain unbuilt.
+
+**Also decided (D57):** the real Remotion renderer is **deferred**. Phase 7 ends at a correct
+Knowledge Object, a verified Script and a real Storyboard. `RemotionRenderer` was renamed
+`StubRenderer` on 2026-08-31 (D96), and the data path into it is now fixed: the renderer receives
+the persisted Storyboard and Timing Plan for the run (ADR-0016), so the real renderer is a drop-in.
+
+### 17.7 Open questions (§16) — status at 2026-08-29
+
+| Question | Change |
+|---|---|
+| ORIGINS audience region | Still open. Needed before Publishing. |
+| Retention policy | Still open, and now also governs quarantine schemas (**ADR-0013**). |
+| Novelty threshold | Still open, and cannot be approached: novelty detection does not exist (§17.6). |
+| Quality threshold of 78 | Still open. Now blocking: **ADR-0012** requires the golden set to measure the Tier 1 quality drop. |
+| Backup and restore | Partially answered — `atlas backup` / `atlas restore` wrap `pg_dump` and `tar`. Untested against a real restore, and must now decide whether quarantine schemas travel with a backup (**ADR-0013**). |
+
+### 17.8 Divergences found on 2026-08-31
+
+New rows, opened by the verification session (audit §13). None is a correction to §1–16.
+
+| Spec section | Divergence | Task |
+|---|---|---|
+| §6 | Agents are called with `topic_title=run.topic_id` at four sites in `runner.py`. The `topics` row holds the real title and it is never read, so every prompt and search query sees an ID where a title belongs (defects R-06, R-07). | **T-22** |
+| §6 | The gate-stage branch of `PipelineRunner._dispatch_stage_handler` — the one returning `gate_passed_<stage>` for the six manual/hybrid stages — is **unreachable**. Those stages always suspend, and `_execute_stage` returns before dispatch in every path that follows. Harmless as a defensive fallback, but it is dead code that reads like behaviour. | **new, T-53** |
+| §7 | `PUBLISH` returns success while `StubPublisher` is wired. A Run can reach `completed` having published nothing. Stated in `docs/STATUS.md` §3, but it is the exact shape of "it ran is not it worked" (**R6**). | **T-21** |
+| §11 | `ImageCandidate` list at stage 13 is re-searched rather than loaded from stage 11, so the candidate set the operator approved at the stage 12 gate is not provably the set the Storyboard drew from. The Storyboard itself is persisted, so everything from stage 13 onward is stable. | **new, T-54** (ADR-0016 trade-offs) |
+
+### 17.9 Divergences found by the second verification on 2026-08-31
+
+Opened and, except where noted, closed by the session recorded in audit §15. Listed because §17 is
+the register of where the spec and the code disagreed, not only of where they still do.
+
+| Spec section | Divergence | State |
+|---|---|---|
+| §10.1 / Invariant 10 | The license gate compared one dialect against its allowlist while the two image adapters emit the other two, so every validly licensed CC asset was rejected and only "Public domain" survived — enforcement that over-blocks silently is as untrustworthy as enforcement that under-blocks. The blocked-term test was a substring match, so the "nc" inside "licence" read as non-commercial. | **Closed** (D112, V-10) |
+| §11 / Invariant 8 | Two model call sites were unmetered and the quota ledger was never read back. | **Closed** (D109, D110, D115, V-02, V-04) |
+| §7 | The operator screen reported a **failed** gate approval as a recorded decision, and displayed invented claims, snapshot hashes, telemetry and quota figures. §7's human gate is only as real as what the human is shown. | **Closed** (D111–D114, V-03) |
+| §5 (operator surface) | The dashboard's wire types described an API that does not exist — `current_stage`, `gate.stage`, `gate.metadata`, a `'open'` gate status, a `/gates` route, a `POST /runs` body with no `topic_id` — so it had never once rendered live data. No document stated the API surface for it to code against; `ARCHITECTURE.md` §2.1 now does. | **Closed** (D111, D122, V-03) |
+| §12 (failure semantics) | `GET /events/runs/{run_id}` reported `state: "active"` for any run ID, including one that does not exist, reading no row. A failure surface that cannot report failure. Deleted; the dashboard polls. | **Closed** (D121, V-12) |
+| §5 | Still open: an operator approving the asset-selection gate cannot see the candidates they are approving, and the same holds for the script and quality gates. The panels that claimed to show them were fixtures. | **Open**, **T-59** |
+| §11 | Still open: "per-Run quota reservations, so the first video of the day cannot starve the third" and "response caching keyed on input hash plus prompt version plus model" are both unimplemented. `platform/cache.py` exists and no adapter calls it. | **Open**, **T-60** |
+| §11 / §12 | Still open: an exhausted quota **fails** the Run. ADR-0004 says it suspends and notifies. This mattered little while the limit was per-process and unreachable; now that the budget is shared and real (**D115**) a Run can hit it mid-flight and lose every completed stage. | **Open**, **T-60** (defect V-13) |
+| §8.4 | **Half closed 2026-09-03 (T-55, ADR-0018, D127). Code changed:** `apps/web/e2e/dashboard.spec.ts` drives real Chromium and asserts what the screen renders against API data, so the browser-test half of this row is met. This row still said "no browser test" on 2026-09-04, a day after it stopped being true — recorded because a register that lags the code is the failure mode §17 exists to prevent. **Still open:** the golden set. | **Open**, **T-36** |
+
+### 17.10 Divergences found on 2026-09-04
+
+| Spec section | Divergence | State |
+|---|---|---|
+| §8.3 (deterministic checks) | `TimingPlan.total_duration_seconds` defaulted to 60.0, so a plan built without it satisfied the 58–62 s check with no seconds behind it. | **Closed** — code changed (T-20, **D129**) |
+| §8.3 / ADR-0006 §2 | The Timing Plan **accumulates** beat durations where ADR-0006 promises **fitting** to a target with a loud failure and a route back to the Script stage. Prompt-compliant scripts span 36–81 s against a 58–62 s gate; `FakeLlm` hides it by returning exactly 60.0 s. | **Open**, **T-61** (defect **V-14**) |
+| §14 (operations) | CI ran no check that could fail the build, and no check gated a merge. | **Closed** — CI is green and `main` requires the `test` check (T-00, T-11, **D130**–**D133**) |
+
+**Note on §17.9's last row.** It claimed "no browser test" until 2026-09-04, one day after T-55 landed
+it. Corrected in place above. A divergence register that trails the code by a session is the same
+hazard as a STATUS that trails it — it is read as current.
+
+### 17.11 Divergences found on 2026-09-05
+
+| Spec section | Divergence | State |
+|---|---|---|
+| §1 (goals), §15 phase 4 | **Nothing in production could create a Domain, a Topic or a Channel**, so "every gate is approvable from both the browser and the terminal" was moot: no Run could be created from either against a database a test had not seeded. Defect **V-15**. | **Closed** — three CLI commands (T-62, **D136**) |
+| §5 (failure semantics) | An unknown `topic_id` reached the database and returned as an untyped `IntegrityError`, which the API answered with a 500. Defect **V-16**. | **Closed** — the use case resolves both rows first and raises a typed error; 404 (T-63, **D137**) |
+| §5 (failure semantics), ADR-0001 | **No Run could be created by any entry point.** No dramatiq broker was ever configured, so the default Redis broker was imported and `redis` is not installed. Defect **V-18**, P0. | **Closed** — `InlineQueueBroker` (**D140**) |
+| §6 (pipeline), ADR-0001 | The API runs all eighteen stages inside the request *and* enqueues the same work, where ADR-0001 says it "never executes pipeline work". Defect **V-19**. | **Open**, **T-67** and **T-68** |
+| §1 ("full CLI parity with the dashboard") | Briefly false in the CLI's favour: `atlas domain/topic/channel create` had no HTTP equivalent for one commit. | **Closed** — eight routes and a Catalog tab (**T-64**); parity restored in both directions, and the dashboard additionally creates a Focus, which the CLI cannot |
+| §15 phase 4 | An operator could not create a Domain or a Focus anywhere in the product, and could not see which of a Run's eighteen stages had executed. | **Closed** — Catalog and Pipeline tabs (**T-64**). **Not verified from an empty database**; see audit §18.4 |
+
+
+
+### 17.12 Divergences found by the five-angle verification — 2026-09-05
+
+Full register in `docs/AUDIT-2026-08-29.md` **§19**; ordered task list in **§19.10**. No code was
+changed by the session that found these.
+
+| Spec section | Divergence | State |
+|---|---|---|
+| §3 Invariant 2, §6 stage 5 | **A Claim reaching `verified` was not verified.** `VerificationResultItem.status` is a free `str` defaulting to `"verified"`, mapped by `if "verif" in raw_status` — so `"unverified"`, `"not verified"` and `"cannot be verified"` all promote the Claim, and a missing field promotes it too. `VerificationAgent` is the only path to that status and rendering gates on it. Defect **V-58**, P0. | **Open**, **T-103** |
+| §3 Invariant 1, §9 | **Source text is interpolated raw into the extraction prompt**, fenced by `"""` with no escaping. A hostile page closes the fence and dictates its own claims; the verbatim check passes them because the quote is genuinely in that page. Chained with V-58 the injected claim reaches `verified`. Defect **V-71**, P0. | **Open**, **T-113** |
+| §9 Source policy | **The Research Profile has no reader.** `preferred_apis`, `source_allowlist` and `source_tier_floor` appear only in the model, the migration seed, the repository round-trip and the API serializer. `ResearchAgent` takes no Domain, so the tier floor and the allowlist constrain nothing. Defect **V-41**. | **Open**, **T-89** |
+| §9 Source policy | **Every source is written `source_tier=PRIMARY`**, whatever it is, and the extraction prompt is told so. The tier is asserted, never established. Defect **V-80**. | **Open**, **T-121** |
+| §9 Source policy | **When search returns nothing the agent invents a source** — a hardcoded result with a made-up title and a Wikipedia URL guessed from the Topic slug — then fetches and snapshots it. Defect **V-81**. | **Open**, **T-122** |
+| §5 Focus | **The Focus affects nothing Atlas produces.** `captured_focus` is read as a string in the idempotency hash and by stage 1, whose output is discarded. `ScopeMode`'s three values behave identically, and ADR-0002's Wikidata Entity resolution does not exist. Defects **V-42**, **V-77**. | **Open**, **T-90**, **T-118** |
+| §5 Focus | **Nothing can set the Active Focus** — `set_active_focus` has only test callers — so every Run captures a Focus built in memory and never persisted. Defect **V-37**. | **Open**, **T-85** |
+| §7 Approval and rejection | **A rejected Gate deadlocks the Run.** Reject → `reworking`; the next pass hits the rejected gate and re-suspends; nothing clears it and no stage re-runs, so `regenerate` and `branch` are recorded and ignored. The gate leaves `/gates/pending`, so the operator has no action. The rejection modal tells them feedback "drives the rework cycle". Defects **V-21**, **V-39**, **V-76**. | **Open**, **T-70** |
+| §8.2 Passing, §8.3 Deterministic checks | **The quality gate invents scores and hardcodes two checks.** A rubric dimension the model omits is scored `80.0` by Atlas, and `min_length=8` does not require eight *distinct* dimensions — so a near-empty judge response passes. `loudness_bounds` and `safe_margins` are literal `True`. Defects **V-59**, **V-60**. | **Open**, **T-104**, **T-105** |
+| §4.2 Budgets | The judge's word-budget check is `100–160`; §4.2 and the prompt both say **110–150**. The beat schema permits `0.5–10.0 s` with no beat maximum, so the schema-permitted duration is 0.5 s to unbounded — wider than V-14's 36–81 s prompt band. Defects **V-64**, **V-63**. | **Open**, folded into **T-61** |
+| §11 Provider ladder | **ADR-0012 is Accepted and five of its six parts are unbuilt.** Four task kinds still route to Tier 2 Gemini; the enforced daily limit is **1500** against a measured **20**; the model ID is `gemini-2.0-flash`, which ADR-0012 records as returning **404 — retired**; there is no Tier 2 → Tier 1 fallback; model IDs are still literals. `OllamaLlm` is an orphan. Defect **V-40**, P0. | **Open**, **T-29**, **T-30**, **T-88** |
+| §11 Quota | **A failed provider call is never metered** — `record_invocation` runs only on success — and `tpm` is declared for every provider and never checked. `SoundDesignAgent` holds Freesound with no `QuotaManager` (~31 unmetered calls per Run). Defects **V-44**, **V-43**, **V-79**. | **Open**, **T-92**, **T-91**, **T-120** |
+| §12 Failure semantics | **A failed stage destroys the whole record of the Run.** One session per request or command, nothing commits until it ends, and the rollback takes the `runs`, `steps`, `gates`, `model_calls` and `quota_ledger` rows with it — probed on the API and the CLI. Defect **V-20**, P0. | **Open**, **T-69** |
+| §14 Publishing schedule | **ADR-0007 has no reader at all.** `save_window`, `get_windows`, `save_blackout_rule` and `get_active_blackout_rules` have only test callers; `PublishScheduler` is an orphan. §17.2's publish row recorded the stage-level caveat, not that the whole section is unbuilt. Defect **V-47**. | **Open**, folded into **T-21** |
+| §6 stage 14 | **Sound design produces an artifact that is discarded.** No `soundtracks` table, no `save_soundtrack`, and the renderer never receives it. Defect **V-62**. | **Open**, **T-107** |
+| §6 stages 11–13 | **Invariant 9's AI-asset trigger is a `"_ai"` substring** of a display string, and stage 13 re-searches a **different** candidate list than the one approved at stage 12 — so licences and the AI flag are validated over assets that are not the ones rendered. Defect **V-25**. | **Open**, **T-74** (absorbs T-54) |
+| §1 (operator surface) | Two dashboard panels render a failed fetch as a fact: a failed `GET /gates/pending` shows "No pending Gates" and "Awaiting a human: 0"; a failed `GET /topics` shows "Topics: 0". A bare `a` keypress approves a gate with no confirmation, while rejection requires a structured modal. Defects **V-35**, **V-36**, **V-75**. | **Open**, **T-84**, **T-117** |

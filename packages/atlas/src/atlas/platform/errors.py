@@ -13,6 +13,25 @@ class AtlasError(Exception):
         self.message = message
 
 
+class DuplicateEntityError(AtlasError):
+    """Raised when a create operation targets an ID that already exists.
+
+    `save_domain`, `save_topic` and `save_channel` are upserts, and the create
+    use cases default every field the caller did not name. Without this guard,
+    `atlas domain create` against an existing ID silently replaced a Research
+    Profile with the empty default — which on 2026-09-05 weakened a real
+    Domain's `source_tier_floor` from `primary` to `institutional`.
+    """
+
+    def __init__(self, entity_type: str, entity_id: str) -> None:
+        super().__init__(
+            f"{entity_type} '{entity_id}' already exists; "
+            f"create refuses to overwrite an existing row"
+        )
+        self.entity_type = entity_type
+        self.entity_id = entity_id
+
+
 class KnowledgeError(AtlasError):
     """Base error for knowledge management and traceability operations."""
 
@@ -72,6 +91,19 @@ class SnapshotNotFoundError(KnowledgeError):
         self.snapshot_id = snapshot_id
 
 
+class TopicNotFoundError(KnowledgeError):
+    """Raised when a referenced Topic does not exist.
+
+    Defect V-16: without this type, an unknown `topic_id` reached the database
+    and came back as SQLAlchemy's `IntegrityError`, which the API answers with
+    a 500 because no handler recognises an infrastructure exception.
+    """
+
+    def __init__(self, topic_id: str) -> None:
+        super().__init__(f"Topic '{topic_id}' not found")
+        self.topic_id = topic_id
+
+
 class FocusError(AtlasError):
     """Base error for Focus and scoping operations."""
 
@@ -84,8 +116,25 @@ class FocusNotFoundError(FocusError):
         self.focus_id = focus_id
 
 
+class DomainNotFoundError(FocusError):
+    """Raised when a referenced Domain does not exist."""
+
+    def __init__(self, domain_id: str) -> None:
+        super().__init__(f"Domain '{domain_id}' not found")
+        self.domain_id = domain_id
+
+
 class ExecutionError(AtlasError):
     """Base error for workflow and pipeline execution."""
+
+
+class ExtractionTypeError(ExecutionError):
+    """Raised when an LLM extraction returns the wrong type."""
+
+    def __init__(self, expected: str, actual: str) -> None:
+        super().__init__(f"Expected extraction of type '{expected}', got '{actual}'")
+        self.expected = expected
+        self.actual = actual
 
 
 class RunNotFoundError(ExecutionError):
@@ -132,6 +181,40 @@ class InvalidStateTransitionError(ExecutionError):
         super().__init__(f"Cannot transition from state '{current_state}' to '{target_state}'")
         self.current_state = current_state
         self.target_state = target_state
+
+
+class ProductionArtifactNotFoundError(ExecutionError):
+    """Raised when a stage needs a persisted production artifact that is missing.
+
+    Stages 10-18 read the Script, TimingPlan, Storyboard and RenderArtifact the
+    earlier stages wrote. A missing row means the pipeline would have to invent
+    one, which is exactly what Invariant 7 forbids.
+    """
+
+    def __init__(self, artifact_kind: str, artifact_id: str) -> None:
+        super().__init__(f"{artifact_kind} '{artifact_id}' not found")
+        self.artifact_kind = artifact_kind
+        self.artifact_id = artifact_id
+
+
+class UnapprovedScriptError(ExecutionError):
+    """Raised when a render is attempted from a script whose claims are not all verified."""
+
+    def __init__(self, script_id: str, offending_claim_ids: list[str]) -> None:
+        super().__init__(
+            f"Script '{script_id}' references claims that are not verified with evidence: "
+            f"{', '.join(sorted(offending_claim_ids))}"
+        )
+        self.script_id = script_id
+        self.offending_claim_ids = offending_claim_ids
+
+
+class PublisherNotConfiguredError(ExecutionError):
+    """Raised when the publish stage runs without a Publisher wired into the runner."""
+
+    def __init__(self, run_id: str) -> None:
+        super().__init__(f"Run '{run_id}' reached the publish stage with no publisher configured")
+        self.run_id = run_id
 
 
 class StepExecutionError(ExecutionError):
@@ -201,6 +284,18 @@ class AiImageUnapprovedError(PolicyError):
             f"AI-generated asset '{asset_id}' requires explicit human approval before render"
         )
         self.asset_id = asset_id
+
+
+class PublishingError(AtlasError):
+    """Base error for publishing identities and their configuration."""
+
+
+class ChannelNotFoundError(PublishingError):
+    """Raised when a referenced Channel does not exist."""
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(f"Channel '{channel_id}' not found")
+        self.channel_id = channel_id
 
 
 class SchedulingError(AtlasError):

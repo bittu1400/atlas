@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,10 +32,37 @@ class Settings(BaseSettings):
     database_pool_size: int = Field(default=10, description="Database connection pool size")
     database_max_overflow: int = Field(default=20, description="Database max overflow connections")
 
+    # Dispatch. "inline" is the truth today: no background queue exists, and
+    # both entry points execute the Run in-process (defects V-18, V-19).
+    # "dramatiq" selects the real broker, which needs one actually running.
+    queue_broker: str = Field(default="inline", description="Queue dispatch: inline or dramatiq")
+
     # Storage
     storage_root: str = Field(default="var/blobs", description="Root path for blob storage")
     snapshot_root: str = Field(
         default="var/snapshots", description="Root path for source snapshots"
+    )
+
+    # Providers
+    #
+    # These carry no `ATLAS_` prefix because the provider documentation, the
+    # deployment environment and `.env` all name them the way the provider does.
+    # Reading them here rather than through `os.getenv` is what makes `.env`
+    # work at all: nothing in Atlas calls `load_dotenv` (defect V-06).
+    gemini_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("GEMINI_API_KEY", "ATLAS_GEMINI_API_KEY"),
+        description="Google Gemini API key. Never logged, never placed in a URL (R12).",
+    )
+    freesound_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("FREESOUND_API_KEY", "ATLAS_FREESOUND_API_KEY"),
+        description="Freesound API key. Never logged, never placed in a URL (R12).",
+    )
+    ollama_base_url: str = Field(
+        default="http://localhost:11434",
+        validation_alias=AliasChoices("OLLAMA_URL", "ATLAS_OLLAMA_BASE_URL"),
+        description="Base URL of the Ollama daemon serving Tier 1 models",
     )
 
     # API Security & CORS

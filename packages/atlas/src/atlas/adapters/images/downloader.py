@@ -6,6 +6,7 @@ from atlas.application.ports.storage import Storage
 
 class UnsupportedMimeTypeError(Exception):
     """Raised when an unsupported image MIME type is encountered."""
+
     pass
 
 

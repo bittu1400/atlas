@@ -91,6 +91,7 @@ class WikimediaCommonsSearch(ImageSearch):
                     author=author,
                     source_archive="Wikimedia Commons",
                     preview_url=info.get("url"),
+                    is_ai_generated=False,
                 )
 
                 try:

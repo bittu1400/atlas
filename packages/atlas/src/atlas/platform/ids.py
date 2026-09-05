@@ -12,9 +12,15 @@ def generate_id(prefix: str) -> str:
     return f"{prefix}_{clean_hex}"
 
 
-def generate_ko_id() -> str:
-    """Generate a stable Knowledge Object ID."""
-    return generate_id("ko")
+def knowledge_object_id_for_topic(topic_id: str) -> str:
+    """Return the Knowledge Object ID for a Topic.
+
+    A Topic has exactly one Knowledge Object, so the ID is derived rather than
+    minted: the pipeline reconstructs it at stage 8 without carrying it through
+    six intervening stages. Both call sites used to spell `f"ko_{topic_id}"`
+    inline, which is one rename away from the class of bug that defect B4 was.
+    """
+    return f"ko_{topic_id}"
 
 
 def generate_claim_id() -> str:

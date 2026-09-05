@@ -29,6 +29,7 @@ class ClaimStatus(StrEnum):
     """Verification status of a Claim."""
 
     VERIFIED = "verified"
+    UNVERIFIED = "unverified"
     UNSUPPORTED = "unsupported"
     REFUTED = "refuted"
     CONTESTED = "contested"
@@ -126,6 +127,9 @@ class Claim(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: str = Field(description="Unique Claim identifier")
+    version: int = Field(
+        default=1, ge=1, description="Append-only revision number of this claim's state"
+    )
     text: str = Field(description="Atomic claim statement")
     assertion_type: AssertionType = Field(description="Assertion type")
     confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Claim confidence score")

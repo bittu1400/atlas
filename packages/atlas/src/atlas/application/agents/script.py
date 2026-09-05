@@ -70,7 +70,7 @@ class ScriptAgent:
         )
 
         route = RoutingPolicy.get_route(TaskKind.STORY_ANGLE_GENERATION)
-        self.quota_mgr.check_rate_limits(route.provider)
+        await self.quota_mgr.check_rate_limits(route.provider)
 
         request = LlmRequest(
             prompt=prompt_text,
@@ -82,8 +82,8 @@ class ScriptAgent:
         extracted = await self.llm.extract(request, StoryAnglePayload)
 
         await self.quota_mgr.record_invocation(
-            provider=route.provider,
-            model_id=route.model_id,
+            provider=extracted.provider,
+            model_id=extracted.model_id,
             prompt_version="story_angle_v1",
             parameters={"temperature": route.temperature},
             code_version="phase-5-v1",
@@ -136,7 +136,7 @@ class ScriptAgent:
         )
 
         route = RoutingPolicy.get_route(TaskKind.SCRIPT_WRITING)
-        self.quota_mgr.check_rate_limits(route.provider)
+        await self.quota_mgr.check_rate_limits(route.provider)
 
         request = LlmRequest(
             prompt=prompt_text,
@@ -148,8 +148,8 @@ class ScriptAgent:
         extracted = await self.llm.extract(request, ScriptPayload)
 
         await self.quota_mgr.record_invocation(
-            provider=route.provider,
-            model_id=route.model_id,
+            provider=extracted.provider,
+            model_id=extracted.model_id,
             prompt_version="script_generation_v1",
             parameters={"temperature": route.temperature},
             code_version="phase-5-v1",
@@ -247,7 +247,6 @@ class ScriptAgent:
         return TimingPlan(
             id=generate_id("tmp"),
             script_id=script.id,
-            total_duration_seconds=round(current_offset, 2),
             beat_timings=beat_timings,
             caption_cues=caption_cues,
             metadata={"words_total": script.total_words, "beats_count": len(script.beats)},

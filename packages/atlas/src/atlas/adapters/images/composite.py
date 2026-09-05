@@ -9,8 +9,8 @@ class CompositeImageSearch(ImageSearch):
 
     async def search_archival(self, query: str, limit: int = 10) -> list[ImageCandidate]:
         """Search across all configured repositories."""
-        results = []
-        urls_seen = set()
+        results: list[ImageCandidate] = []
+        urls_seen: set[str] = set()
 
         for searcher in self.searchers:
             remaining = limit - len(results)

@@ -1,8 +1,20 @@
 # ADR-0005 — Remotion as the primary renderer
 
-**Status:** Accepted
+**Status:** Accepted — **implementation deferred (D57)**
 **Date:** 2026-07-30
-**Relates to:** D31, D5b, D33
+**Relates to:** D31, D5b, D33, D57, D96, ADR-0016
+
+> **Amendment, 2026-08-31.** This decision stands: Remotion remains the intended renderer. **It has
+> never been implemented.** No node process has ever been spawned. What exists is
+> `adapters/renderer/stub.py::StubRenderer`, an ffmpeg colour field at the correct resolution for the
+> requested `RenderTarget`, with real WebVTT captions computed from the persisted Timing Plan. It was
+> named `RemotionRenderer` until 2026-08-31 and that name is what let three phases of documentation
+> read as truth (defect C-03, rule R3, **D96**).
+>
+> The data path *into* the renderer is now real: since **ADR-0016** the renderer receives the
+> Storyboard and Timing Plan this Run persisted, so building the real one is a drop-in rather than a
+> rewrite. The `apps/renderer/` Remotion project — compositions, `KineticText`, `ArchivalVisual`,
+> `SoundDesign`, `AttributionEndCard` — exists and is unreferenced by any Python code.
 
 ## Context
 

@@ -6,17 +6,21 @@ As specified in ARCHITECTURE.md §1:
 """
 
 import asyncio
+import subprocess
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import typer
 from atlas.adapters.container import Container
 from atlas.adapters.persistence.database import get_session_manager, reset_session_manager
 from atlas.adapters.persistence.repositories.execution_repository import ExecutionRepository
 from atlas.adapters.persistence.repositories.focus_repository import FocusRepository
-from atlas.application.pipeline.runner import PipelineRunner
 from atlas.application.usecases.approve_gate import ApproveGateUseCase
+from atlas.application.usecases.create_channel import CreateChannelUseCase
+from atlas.application.usecases.create_domain import CreateDomainUseCase
 from atlas.application.usecases.create_run import CreateRunUseCase
+from atlas.application.usecases.create_topic import CreateTopicUseCase
 from atlas.application.usecases.get_run_status import (
     GetQuotaStatusUseCase,
     GetRunStatusUseCase,
@@ -25,6 +29,7 @@ from atlas.application.usecases.get_run_status import (
 )
 from atlas.application.usecases.reject_gate import RejectGateUseCase
 from atlas.domain.execution.models import RejectionAction, RejectionFeedback
+from atlas.platform.config import get_settings
 from rich.console import Console
 from rich.table import Table
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,28 +44,39 @@ gate_app = typer.Typer(
     name="gate", help="Manage suspension Gates and Approvals", no_args_is_help=True
 )
 quota_app = typer.Typer(name="quota", help="Inspect provider quota status", no_args_is_help=True)
+domain_app = typer.Typer(name="domain", help="Manage research Domains", no_args_is_help=True)
+topic_app = typer.Typer(name="topic", help="Manage Topics", no_args_is_help=True)
+channel_app = typer.Typer(name="channel", help="Manage publishing Channels", no_args_is_help=True)
 
 app.add_typer(run_app)
 app.add_typer(gate_app)
 app.add_typer(quota_app)
+app.add_typer(domain_app)
+app.add_typer(topic_app)
+app.add_typer(channel_app)
 
 console = Console()
 
 
-
-
-
-def _build_runner_and_repos(
+def _build_container_and_repos(
     session: AsyncSession,
-) -> tuple[PipelineRunner, ExecutionRepository, FocusRepository]:
-    """Helper to build repositories and pipeline runner on an active managed session."""
+) -> tuple[Container, ExecutionRepository, FocusRepository]:
+    """Build the container and the repositories a command needs on an active session.
+
+    The pipeline runner is not built here: most commands only read state, and
+    constructing the runner would demand provider credentials they never use.
+    """
     container = Container(session)
-    return container.get_pipeline_runner(), container.execution_repo, container.focus_repo
+    return (
+        container,
+        container.require_execution_repo(),
+        container.require_focus_repo(),
+    )
 
 
 @asynccontextmanager
 async def _managed_cli_context() -> AsyncGenerator[
-    tuple[PipelineRunner, ExecutionRepository, FocusRepository]
+    tuple[Container, ExecutionRepository, FocusRepository]
 ]:
     """Manage lifecycle of database session and engine cleanly within async CLI commands."""
 
@@ -68,7 +84,7 @@ async def _managed_cli_context() -> AsyncGenerator[
     session_manager = get_session_manager()
     try:
         async with session_manager.session() as session:
-            yield _build_runner_and_repos(session)
+            yield _build_container_and_repos(session)
     finally:
         await session_manager.close()
         reset_session_manager()
@@ -89,9 +105,16 @@ def create_run_cmd(
     """Create a new pipeline Run and trigger execution."""
 
     async def _run() -> None:
-        async with _managed_cli_context() as (runner, exec_repo, focus_repo):
+        async with _managed_cli_context() as (container, exec_repo, focus_repo):
+            runner = container.get_pipeline_runner()
             queue_broker = Container().queue_broker
-            use_case = CreateRunUseCase(exec_repo, focus_repo, queue_broker)
+            use_case = CreateRunUseCase(
+                exec_repo,
+                focus_repo,
+                queue_broker,
+                container.require_source_repo(),
+                container.require_publishing_repo(),
+            )
 
             run = await use_case.execute(
                 topic_id=topic_id,
@@ -127,7 +150,7 @@ def get_run_status_cmd(
     """Inspect current status, steps, and gates of a Run."""
 
     async def _run() -> None:
-        async with _managed_cli_context() as (_, exec_repo, _):
+        async with _managed_cli_context() as (_container, exec_repo, _):
             use_case = GetRunStatusUseCase(exec_repo)
             run = await use_case.execute(run_id)
 
@@ -171,7 +194,7 @@ def list_runs_cmd(
     """List recent pipeline Runs."""
 
     async def _run() -> None:
-        async with _managed_cli_context() as (_, exec_repo, _):
+        async with _managed_cli_context() as (_container, exec_repo, _):
             use_case = ListRunsUseCase(exec_repo)
             runs = await use_case.execute(limit=limit)
 
@@ -208,7 +231,7 @@ def list_gates_cmd() -> None:
     """List all pending Gates awaiting operator review."""
 
     async def _run() -> None:
-        async with _managed_cli_context() as (_, exec_repo, _):
+        async with _managed_cli_context() as (_container, exec_repo, _):
             use_case = ListGatesUseCase(exec_repo)
             gates = await use_case.execute(pending_only=True)
 
@@ -243,7 +266,8 @@ def approve_gate_cmd(
     """Approve a pending Gate and resume pipeline execution."""
 
     async def _run() -> None:
-        async with _managed_cli_context() as (runner, exec_repo, _):
+        async with _managed_cli_context() as (container, exec_repo, _):
+            runner = container.get_pipeline_runner()
             queue_broker = Container().queue_broker
             use_case = ApproveGateUseCase(exec_repo, queue_broker)
 
@@ -278,7 +302,8 @@ def reject_gate_cmd(
     """Reject a Gate with mandatory structured feedback (SPEC §7)."""
 
     async def _run() -> None:
-        async with _managed_cli_context() as (runner, exec_repo, _):
+        async with _managed_cli_context() as (container, exec_repo, _):
+            runner = container.get_pipeline_runner()
             queue_broker = Container().queue_broker
             use_case = RejectGateUseCase(exec_repo, queue_broker)
 
@@ -307,6 +332,78 @@ def reject_gate_cmd(
 
 
 # =============================================================================
+# Catalogue Commands — the rows a Run needs before it can exist
+#
+# Defect V-15: `save_domain`, `save_topic` and `save_channel` had no production
+# caller at all, so a Run could only be created against a database some test had
+# seeded. These are the operator's way in.
+# =============================================================================
+
+
+@domain_app.command("create")
+def create_domain_cmd(
+    domain_id: str = typer.Argument(..., help="Unique Domain ID (e.g. dom_history)"),
+    name: str = typer.Option(..., "--name", "-n", help="Display name (e.g. History)"),
+    description: str = typer.Option(..., "--description", "-d", help="Coverage description"),
+) -> None:
+    """Register a research Domain."""
+
+    async def _run() -> None:
+        async with _managed_cli_context() as (_container, _exec_repo, focus_repo):
+            domain = await CreateDomainUseCase(focus_repo).execute(
+                domain_id=domain_id, name=name, description=description
+            )
+            console.print(f"[green]\u2713 Domain created:[/green] [bold]{domain.id}[/bold]")
+
+    asyncio.run(_run())
+
+
+@topic_app.command("create")
+def create_topic_cmd(
+    topic_id: str = typer.Argument(..., help="Unique Topic ID (e.g. topic_origin_of_chess)"),
+    title: str = typer.Option(..., "--title", "-t", help="Human-readable Topic title"),
+    domain_id: str = typer.Option(..., "--domain", "-D", help="Existing Domain ID"),
+    entity_id: str | None = typer.Option(None, "--entity", "-e", help="Wikidata QID, if known"),
+) -> None:
+    """Register a Topic against an existing Domain."""
+
+    async def _run() -> None:
+        async with _managed_cli_context() as (container, _exec_repo, focus_repo):
+            topic = await CreateTopicUseCase(container.require_source_repo(), focus_repo).execute(
+                topic_id=topic_id, title=title, domain_id=domain_id, entity_id=entity_id
+            )
+            console.print(
+                f"[green]\u2713 Topic created:[/green] [bold]{topic.id}[/bold] "
+                f"(Status: {topic.status.value})"
+            )
+
+    asyncio.run(_run())
+
+
+@channel_app.command("create")
+def create_channel_cmd(
+    channel_id: str = typer.Argument(..., help="Unique Channel ID (e.g. origins)"),
+    name: str = typer.Option(..., "--name", "-n", help="Display name"),
+    audience_timezone: str = typer.Option(
+        "America/New_York", "--timezone", "-z", help="IANA timezone of the Channel's audience"
+    ),
+) -> None:
+    """Register a publishing Channel."""
+
+    async def _run() -> None:
+        async with _managed_cli_context() as (container, _exec_repo, _focus_repo):
+            channel = await CreateChannelUseCase(container.require_publishing_repo()).execute(
+                channel_id=channel_id, name=name, audience_timezone=audience_timezone
+            )
+            console.print(
+                f"[green]\u2713 Channel created:[/green] [bold]{channel.id}[/bold] "
+                f"({channel.audience_timezone})"
+            )
+
+    asyncio.run(_run())
+
+
+# =============================================================================
 # Quota Commands
 # =============================================================================
 
@@ -316,7 +413,7 @@ def quota_status_cmd() -> None:
     """Inspect current quota availability across providers."""
 
     async def _run() -> None:
-        async with _managed_cli_context() as (_, exec_repo, _):
+        async with _managed_cli_context() as (_container, exec_repo, _):
             use_case = GetQuotaStatusUseCase(exec_repo)
             status_data = await use_case.execute()
 
@@ -337,12 +434,10 @@ def quota_status_cmd() -> None:
 
     asyncio.run(_run())
 
+
 # =============================================================================
 # Deployment Commands
 # =============================================================================
-
-import os
-import subprocess
 
 
 @app.command("backup")
@@ -352,16 +447,24 @@ def backup_cmd(
     """Backup Postgres database and blobs."""
     console.print(f"[bold green]Starting backup to {output_file}...[/bold green]")
     try:
-        # Dump DB
-        db_url = os.getenv("ATLAS_DATABASE_URL", "postgresql://atlas:atlas_password@localhost:5432/atlas_db")
-        # Strip +asyncpg if present
-        sync_db_url = db_url.replace("+asyncpg", "")
+        settings = get_settings()
+        sync_db_url = settings.database_sync_url.replace("+psycopg", "").replace("+asyncpg", "")
         subprocess.run(["pg_dump", sync_db_url, "-F", "c", "-f", "/tmp/db_dump.custom"], check=True)
+
         # Tar blobs + DB dump
-        subprocess.run(["tar", "-czf", output_file, "-C", "/var/atlas", "blobs", "-C", "/tmp", "db_dump.custom"], check=True)
+        storage_path = Path(settings.storage_root).resolve()
+        parent_dir = str(storage_path.parent)
+        folder_name = storage_path.name
+
+        cmd = ["tar", "-czf", str(Path(output_file).resolve()), "-C", "/tmp", "db_dump.custom"]
+        if storage_path.exists():
+            cmd.extend(["-C", parent_dir, folder_name])
+
+        subprocess.run(cmd, check=True)
         console.print("[bold green]Backup complete![/bold green]")
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, OSError) as e:
         console.print(f"[bold red]Backup failed: {e}[/bold red]")
+        raise typer.Exit(code=1) from e
 
 
 @app.command("restore")
@@ -371,15 +474,22 @@ def restore_cmd(
     """Restore Postgres database and blobs from backup."""
     console.print(f"[bold yellow]Starting restore from {input_file}...[/bold yellow]")
     try:
+        settings = get_settings()
         # Untar
         subprocess.run(["tar", "-xzf", input_file, "-C", "/tmp"], check=True)
-        subprocess.run(["cp", "-r", "/tmp/blobs", "/var/atlas/"], check=True)
+        if Path("/tmp/blobs").exists():
+            Path(settings.storage_root).parent.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                ["cp", "-r", "/tmp/blobs", str(Path(settings.storage_root).parent)], check=True
+            )
         # Restore DB
-        db_url = os.getenv("ATLAS_DATABASE_URL", "postgresql://atlas:atlas_password@localhost:5432/atlas_db")
-        sync_db_url = db_url.replace("+asyncpg", "")
+        sync_db_url = settings.database_sync_url.replace("+psycopg", "").replace("+asyncpg", "")
         subprocess.run(["pg_restore", "-d", sync_db_url, "-1", "/tmp/db_dump.custom"], check=True)
         console.print("[bold green]Restore complete![/bold green]")
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, OSError) as e:
         console.print(f"[bold red]Restore failed: {e}[/bold red]")
+        raise typer.Exit(code=1) from e
+
+
 if __name__ == "__main__":
     app()

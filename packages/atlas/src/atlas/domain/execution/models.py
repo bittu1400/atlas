@@ -54,6 +54,29 @@ class GateType(StrEnum):
     HYBRID = "hybrid"
 
 
+class PipelineStage(StrEnum):
+    """The 18 stages in the Atlas production pipeline (SPEC §6)."""
+
+    IDEA_DISCOVERY = "idea_discovery"  # Stage 1
+    TOPIC_SELECTION = "topic_selection"  # Gate 2 (Manual)
+    RESEARCH = "research"  # Stage 3
+    CLAIM_EXTRACTION = "claim_extraction"  # Stage 4
+    FACT_VERIFICATION = "fact_verification"  # Stage 5 (Hybrid)
+    KNOWLEDGE_OBJECT = "knowledge_object"  # Gate 6 (Manual)
+    STORY_ANGLE = "story_angle"  # Stage 7 (Hybrid)
+    SCRIPT_GENERATION = "script_generation"  # Stage 8
+    SCRIPT_APPROVAL = "script_approval"  # Gate 9 (Manual)
+    TIMING_PLAN = "timing_plan"  # Stage 10
+    ASSET_DISCOVERY = "asset_discovery"  # Stage 11
+    ASSET_SELECTION = "asset_selection"  # Gate 12 (Manual)
+    STORYBOARD_CUTS = "storyboard_cuts"  # Stage 13
+    SOUND_DESIGN = "sound_design"  # Stage 14
+    REMOTION_RENDER = "remotion_render"  # Stage 15
+    QUALITY_CHECK = "quality_check"  # Stage 16 (Hard automatic gate)
+    FINAL_APPROVAL = "final_approval"  # Gate 17 (Manual)
+    PUBLISH = "publish"  # Stage 18 (Terminal publish ready)
+
+
 class GateStatus(StrEnum):
     """Resolution status of a Gate."""
 

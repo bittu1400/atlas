@@ -6,10 +6,16 @@ As specified in SPEC §5, Invariant 10, and ADR-0002:
 """
 
 from atlas.application.ports.queue import QueueBroker
-from atlas.application.ports.repositories import ExecutionRepositoryPort, FocusRepositoryPort
+from atlas.application.ports.repositories import (
+    ExecutionRepositoryPort,
+    FocusRepositoryPort,
+    PublishingRepositoryPort,
+    SourceRepositoryPort,
+)
 from atlas.domain.execution.models import Run, RunStatus
 from atlas.domain.focus.models import Focus, FocusSnapshot, ScopeMode
 from atlas.platform.clock import utc_now
+from atlas.platform.errors import ChannelNotFoundError, TopicNotFoundError
 from atlas.platform.ids import generate_id, generate_trace_id
 from atlas.platform.logging import get_logger
 
@@ -24,10 +30,14 @@ class CreateRunUseCase:
         execution_repo: ExecutionRepositoryPort,
         focus_repo: FocusRepositoryPort,
         queue_broker: QueueBroker,
+        source_repo: SourceRepositoryPort,
+        publishing_repo: PublishingRepositoryPort,
     ) -> None:
         self.execution_repo = execution_repo
         self.focus_repo = focus_repo
         self.queue_broker = queue_broker
+        self.source_repo = source_repo
+        self.publishing_repo = publishing_repo
 
     async def execute(
         self,
@@ -36,7 +46,18 @@ class CreateRunUseCase:
         actor_id: str = "operator",
         focus_id: str | None = None,
     ) -> Run:
-        """Create a new Run, capturing Focus by value."""
+        """Create a new Run, capturing Focus by value.
+
+        The Topic and Channel are resolved before anything is constructed.
+        Leaving that to `runs_topic_id_fkey` was defect V-16: the violation
+        arrives as SQLAlchemy's `IntegrityError`, which no handler types, so
+        both entry points answered a mistyped topic ID with a 500.
+        """
+        if await self.source_repo.get_topic(topic_id) is None:
+            raise TopicNotFoundError(topic_id)
+        if await self.publishing_repo.get_channel(channel_id) is None:
+            raise ChannelNotFoundError(channel_id)
+
         # 1. Resolve Focus to capture by value
         focus: Focus | None = None
         if focus_id:

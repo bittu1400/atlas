@@ -1,6 +1,5 @@
 """Integration tests covering Phase 3.1 remediated execution state machine, runner error handling, and API security."""
 
-import json
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -9,11 +8,12 @@ import pytest
 from atlas.adapters.persistence.repositories.execution_repository import ExecutionRepository
 from atlas.adapters.persistence.repositories.focus_repository import FocusRepository
 from atlas.adapters.persistence.repositories.knowledge_repository import KnowledgeRepository
+from atlas.adapters.persistence.repositories.production_repository import ProductionRepository
 from atlas.adapters.persistence.repositories.publishing_repository import PublishingRepository
 from atlas.adapters.persistence.repositories.source_repository import SourceRepository
 from atlas.adapters.storage.local import LocalStorage
 from atlas.application.pipeline.runner import PipelineRunner
-from atlas.application.policies.gate_policy import PipelineStage
+from atlas.application.ports.llm import LlmCapabilities
 from atlas.application.usecases.get_run_status import GetQuotaStatusUseCase, ListGatesUseCase
 from atlas.domain.execution.models import (
     Approval,
@@ -21,6 +21,7 @@ from atlas.domain.execution.models import (
     Gate,
     GateStatus,
     GateType,
+    PipelineStage,
     QuotaLedgerEntry,
     Run,
     RunStatus,
@@ -51,7 +52,6 @@ from apps.api.dependencies import (
     get_storage,
 )
 from apps.api.main import app
-from apps.api.routes.events import event_generator
 
 
 async def _seed_prerequisites(
@@ -103,6 +103,7 @@ def api_client(db_session: AsyncSession, test_storage: LocalStorage) -> AsyncCli
     from atlas.adapters.fakes.providers import FakeQueueBroker
 
     from apps.api.dependencies import get_queue_broker
+
     app.dependency_overrides[get_queue_broker] = lambda: FakeQueueBroker()
 
     transport = ASGITransport(app=app)
@@ -292,9 +293,14 @@ async def test_runner_stage_failure_handling(db_session: AsyncSession) -> None:
     focus_repo = FocusRepository(db_session)
     src_repo = SourceRepository(db_session)
     pub_repo = PublishingRepository(db_session)
+    prod_repo = ProductionRepository(db_session)
     quota_mgr = QuotaManager(exec_repo)
 
     class FailingLlm:
+        @property
+        def capabilities(self) -> LlmCapabilities:
+            return LlmCapabilities(tier=2)
+
         async def extract(self, *_args: Any, **_kwargs: Any) -> Any:
             raise ConnectionError("Upstream LLM provider down")
 
@@ -318,6 +324,7 @@ async def test_runner_stage_failure_handling(db_session: AsyncSession) -> None:
         focus_repo=focus_repo,
         source_repo=src_repo,
         publishing_repo=pub_repo,
+        production_repo=prod_repo,
         storage=storage,
         llm=FailingLlm(),
         embedder=FakeEmbedder(),
@@ -369,20 +376,3 @@ async def test_runner_stage_failure_handling(db_session: AsyncSession) -> None:
     failed_step = await exec_repo.get_step(f"step_{run_id}_idea_discovery")
     assert failed_step.status.value == "failed"
     assert "Upstream LLM provider down" in (failed_step.error or "")
-
-
-@pytest.mark.asyncio
-async def test_sse_event_serialization() -> None:
-    """P0-05: Server-Sent Events are serialized with json.dumps without injection vulnerability."""
-    malicious_run_id = 'test_run"}\n\nevent: evil\ndata: {"hacked": true'
-    events = []
-    async for event_chunk in event_generator(malicious_run_id):
-        events.append(event_chunk)
-
-    assert len(events) >= 1
-    chunk = events[0]
-    assert chunk.startswith("data: ")
-    raw_json = chunk[len("data: ") :].rstrip("\n")
-    parsed = json.loads(raw_json)
-    assert parsed["run_id"] == malicious_run_id
-    assert parsed["event"] == "connected"

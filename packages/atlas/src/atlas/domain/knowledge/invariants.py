@@ -36,3 +36,19 @@ def validate_claim_publication_readiness(
         raise TraceabilityConstraintError(
             f"Inference claim '{claim.id}' must specify parent inferred_from_claim_ids"
         )
+
+
+def validate_knowledge_object_claims_are_traceable(
+    ko_id: str, version: int, claim_ids: list[str], claim_ids_with_evidence: set[str]
+) -> None:
+    """Refuse a Knowledge Object version that references a claim carrying no evidence link.
+
+    Invariant 1 is enforced at the moment of persistence, not by filtering afterwards: a silently
+    dropped claim leaves the invariant test green and the Knowledge Object empty (defect SC-04).
+    """
+    orphans = sorted({cid for cid in claim_ids if cid not in claim_ids_with_evidence})
+    if orphans:
+        raise TraceabilityConstraintError(
+            f"Knowledge Object '{ko_id}' version {version} references claims with 0 evidence "
+            f"links, refusing to save: {orphans}"
+        )

@@ -8,6 +8,7 @@ class DramatiqQueueBroker(QueueBroker):
     """Real queue broker using Dramatiq for background jobs."""
 
     async def enqueue(self, run_id: str, step_name: str | None = None, **kwargs: Any) -> None:
+        _ = (step_name, kwargs)
         from apps.worker.tasks import execute_pipeline_task
 
         loop = asyncio.get_running_loop()

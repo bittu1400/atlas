@@ -6,6 +6,7 @@ from typing import TypedDict
 
 class KeystrokeModifier(TypedDict):
     """Struct describing modifiers for a selected keystroke sample."""
+
     sample_path: str
     volume_modifier: float
     pitch_modifier: float
@@ -19,7 +20,7 @@ class KeystrokeSampler:
         if len(samples) < 5:
             raise ValueError("Must provide at least 5 distinct keystroke samples.")
         self.samples = samples
-        self._last_sample = None
+        self._last_sample: str | None = None
 
     def get_sample(self) -> KeystrokeModifier:
         """Select a sample non-consecutively with randomized velocity and pitch/timbre."""
@@ -40,7 +41,5 @@ class KeystrokeSampler:
         pitch = 1.0 + random.uniform(-0.05, 0.05)
 
         return KeystrokeModifier(
-            sample_path=selected_sample,
-            volume_modifier=velocity,
-            pitch_modifier=pitch
+            sample_path=selected_sample, volume_modifier=velocity, pitch_modifier=pitch
         )

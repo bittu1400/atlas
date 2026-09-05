@@ -31,10 +31,10 @@ from atlas.domain.knowledge.payload import KnowledgePayloadV1
 from atlas.platform.ids import (
     generate_claim_id,
     generate_evidence_id,
-    generate_ko_id,
     generate_snapshot_id,
     generate_source_id,
     generate_topic_id,
+    knowledge_object_id_for_topic,
 )
 from pydantic import HttpUrl
 from sqlalchemy.exc import IntegrityError
@@ -123,7 +123,7 @@ async def test_full_knowledge_object_and_traceability_lifecycle(
         status=ClaimStatus.VERIFIED,
         created_at=now,
     )
-    await source_repo.save_claim(claim)
+    await source_repo.save_claim(claim, actor_id="test.seed", reason="Fixture seed")
     await source_repo.link_claim_evidence(
         ClaimEvidenceLink(
             claim_id=claim_id,
@@ -134,7 +134,7 @@ async def test_full_knowledge_object_and_traceability_lifecycle(
     )
 
     # 6. Genesis Revision: Create Knowledge Object v1
-    ko_id = generate_ko_id()
+    ko_id = knowledge_object_id_for_topic("topic_ko_acceptance")
     ko_v1 = KnowledgeObjectVersion(
         ko_id=ko_id,
         version=1,
@@ -284,7 +284,7 @@ async def test_claim_usage_impact_index_for_retractions(
         status=ClaimStatus.CONTESTED,
         created_at=now,
     )
-    await source_repo.save_claim(claim)
+    await source_repo.save_claim(claim, actor_id="test.seed", reason="Fixture seed")
 
     # Record Claim Usage in Render Output
     usage = ClaimUsage(

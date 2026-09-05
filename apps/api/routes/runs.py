@@ -2,6 +2,12 @@ from atlas.adapters.persistence.repositories.execution_repository import Executi
 from atlas.application.pipeline.runner import PipelineRunner
 from atlas.application.usecases.create_run import CreateRunUseCase
 from atlas.application.usecases.get_run_status import GetRunStatusUseCase, ListRunsUseCase
+from atlas.application.usecases.inspect_run import (
+    GetRunKnowledgeUseCase,
+    GetRunTelemetryUseCase,
+    RunKnowledgeView,
+    TelemetryEvent,
+)
 from fastapi import APIRouter, Depends, Query, status
 
 from apps.api.dependencies import (
@@ -9,7 +15,9 @@ from apps.api.dependencies import (
     get_execution_repository,
     get_list_runs_use_case,
     get_pipeline_runner,
+    get_run_knowledge_use_case,
     get_run_status_use_case,
+    get_run_telemetry_use_case,
     verify_api_key,
 )
 from apps.api.schemas import CreateRunRequest, GateResponse, RunResponse, StepResponse
@@ -140,3 +148,24 @@ async def get_run_gates(
         )
         for g in gates
     ]
+
+
+@router.get("/{run_id}/knowledge", response_model=RunKnowledgeView)
+async def get_run_knowledge(
+    run_id: str,
+    use_case: GetRunKnowledgeUseCase = Depends(get_run_knowledge_use_case),
+    _auth: str = Depends(verify_api_key),
+) -> RunKnowledgeView:
+    """Fetch the Run's Knowledge Object with every Claim traced to its evidence."""
+    return await use_case.execute(run_id)
+
+
+@router.get("/{run_id}/telemetry", response_model=list[TelemetryEvent])
+async def get_run_telemetry(
+    run_id: str,
+    limit: int = Query(default=100, ge=1, le=500, description="Max events to return"),
+    use_case: GetRunTelemetryUseCase = Depends(get_run_telemetry_use_case),
+    _auth: str = Depends(verify_api_key),
+) -> list[TelemetryEvent]:
+    """Fetch the Run's recorded Steps and metered model calls, newest first."""
+    return await use_case.execute(run_id, limit=limit)

@@ -1,246 +1,187 @@
 import { OriginsVideoProps } from './types';
 
+// Layout fixture for `remotion preview`, and nothing else.
+//
+// It carries the SHAPE of a video — beat count, frame arithmetic, scene pairing,
+// attribution rows — and no content. Rule R4: a fixture must never read as a
+// fact. This file previously held eleven beats of Rosetta Stone history, with
+// claim IDs and named archives attached, and the operator dashboard rendered it
+// in a panel labelled "rendering engine". A fixture that reads like a fact is
+// exactly how the 2026-08-29 incident put invented history in front of a human.
+//
+// The Python-side guard (`test_guard_7_no_plausible_history_in_fakes`) parses
+// Python only; `tests/unit/test_no_fabrication.py` now scans this file too.
+
 export const sampleOriginsVideoProps: OriginsVideoProps = {
-  title: "The Decipherment of the Rosetta Stone",
+  title: "PLACEHOLDER_TITLE — layout fixture, not a video",
   aspectRatio: "vertical",
-  durationInFrames: 1800, // 60 seconds at 30 fps
+  durationInFrames: 720,
   fps: 30,
   beats: [
     {
-      id: "beat-1",
+      id: "beat-01",
       beatIndex: 1,
-      text: "July 1799. French soldiers uncover a granodiorite slab near Rashid.",
+      text: "PLACEHOLDER_BEAT_01: SUBJECT_01 was recorded by SOURCE_01.",
       startFrame: 0,
-      durationFrames: 120, // 4.0s
-      claimIds: ["CLM-001"],
-      emphasisWords: ["1799", "granodiorite slab"]
+      durationFrames: 120,
+      claimIds: ["PLACEHOLDER_CLAIM_01"],
+      emphasisWords: ["SUBJECT_01"]
     },
     {
-      id: "beat-2",
+      id: "beat-02",
       beatIndex: 2,
-      text: "Carved with three scripts: Ancient Greek, Demotic, and Egyptian Hieroglyphs.",
+      text: "PLACEHOLDER_BEAT_02: SUBJECT_02 was recorded by SOURCE_02.",
       startFrame: 120,
-      durationFrames: 120, // 4.0s
-      claimIds: ["CLM-002"],
-      emphasisWords: ["three scripts"]
+      durationFrames: 120,
+      claimIds: ["PLACEHOLDER_CLAIM_02"],
+      emphasisWords: ["SUBJECT_02"]
     },
     {
-      id: "beat-3",
+      id: "beat-03",
       beatIndex: 3,
-      text: "For fourteen centuries, hieroglyphs were thought to be pure mystical symbols.",
+      text: "PLACEHOLDER_BEAT_03: SUBJECT_03 was recorded by SOURCE_03.",
       startFrame: 240,
-      durationFrames: 135, // 4.5s
-      claimIds: ["CLM-003"],
-      emphasisWords: ["fourteen centuries"]
+      durationFrames: 120,
+      claimIds: ["PLACEHOLDER_CLAIM_03"],
+      emphasisWords: ["SUBJECT_03"]
     },
     {
-      id: "beat-4",
+      id: "beat-04",
       beatIndex: 4,
-      text: "Thomas Young notices royal names are enclosed inside oval loops called cartouches.",
-      startFrame: 375,
-      durationFrames: 120, // 4.0s
-      claimIds: ["CLM-004"],
-      emphasisWords: ["cartouches"]
+      text: "PLACEHOLDER_BEAT_04: SUBJECT_04 was recorded by SOURCE_04.",
+      startFrame: 360,
+      durationFrames: 120,
+      claimIds: ["PLACEHOLDER_CLAIM_04"],
+      emphasisWords: ["SUBJECT_04"]
     },
     {
-      id: "beat-5",
+      id: "beat-05",
       beatIndex: 5,
-      text: "He isolates the letters for 'Ptolemy' — proving hieroglyphs spell phonetic sounds.",
-      startFrame: 495,
-      durationFrames: 135, // 4.5s
-      claimIds: ["CLM-005"],
-      emphasisWords: ["Ptolemy", "phonetic sounds"]
+      text: "PLACEHOLDER_BEAT_05: SUBJECT_05 was recorded by SOURCE_05.",
+      startFrame: 480,
+      durationFrames: 120,
+      claimIds: ["PLACEHOLDER_CLAIM_05"],
+      emphasisWords: ["SUBJECT_05"]
     },
     {
-      id: "beat-6",
+      id: "beat-06",
       beatIndex: 6,
-      text: "1822. Jean-François Champollion receives copies of the Abu Simbel inscriptions.",
-      startFrame: 630,
-      durationFrames: 120, // 4.0s
-      claimIds: ["CLM-006"],
-      emphasisWords: ["1822", "Champollion"]
-    },
-    {
-      id: "beat-7",
-      beatIndex: 7,
-      text: "He recognizes the cartouche of 'Ramesses' from the Coptic word for sun: 'Ra'.",
-      startFrame: 750,
-      durationFrames: 120, // 4.0s
-      claimIds: ["CLM-007"],
-      emphasisWords: ["Ramesses", "Ra"]
-    },
-    {
-      id: "beat-8",
-      beatIndex: 8,
-      text: "He sprints into the Académie des Inscriptions, shouts 'Je tiens mon affaire!', and collapses.",
-      startFrame: 870,
-      durationFrames: 135, // 4.5s
-      claimIds: ["CLM-008"],
-      emphasisWords: ["Je tiens mon affaire!"]
-    },
-    {
-      id: "beat-9",
-      beatIndex: 9,
-      text: "Hieroglyphs were not silent pictures. They were a spoken alphabet.",
-      startFrame: 1005,
-      durationFrames: 120, // 4.0s
-      claimIds: ["CLM-009"],
-      emphasisWords: ["spoken alphabet"]
-    },
-    {
-      id: "beat-10",
-      beatIndex: 10,
-      text: "Three millennia of lost Egyptian history unlocked in a single moment.",
-      startFrame: 1125,
-      durationFrames: 120, // 4.0s
-      claimIds: ["CLM-010"],
-      emphasisWords: ["Three millennia"]
-    },
-    {
-      id: "beat-11",
-      beatIndex: 11,
-      text: "Every primary source verified. Deciphered through evidence.",
-      startFrame: 1245,
-      durationFrames: 120, // 4.0s
-      claimIds: ["CLM-011"],
-      emphasisWords: ["verified", "evidence"]
+      text: "PLACEHOLDER_BEAT_06: SUBJECT_06 was recorded by SOURCE_06.",
+      startFrame: 600,
+      durationFrames: 120,
+      claimIds: ["PLACEHOLDER_CLAIM_06"],
+      emphasisWords: ["SUBJECT_06"]
     }
   ],
   scenes: [
     {
-      id: "scene-1",
+      id: "scene-01",
       sceneIndex: 1,
-      beatId: "beat-1",
-      assetTitle: "Rosetta Stone granodiorite slab",
-      assetAuthor: "British Museum Collection (Archival Scan)",
-      license: "Public Domain",
+      beatId: "beat-01",
+      assetTitle: "PLACEHOLDER_ASSET_01",
+      assetAuthor: "PLACEHOLDER_CREATOR_01",
+      license: "PLACEHOLDER_LICENSE",
       isAiGenerated: false,
       panDirection: "zoom-in"
     },
     {
-      id: "scene-2",
+      id: "scene-02",
       sceneIndex: 2,
-      beatId: "beat-2",
-      assetTitle: "Close-up of Greek and Demotic inscriptions",
-      assetAuthor: "Wikimedia Commons / CC-Zero Archive",
-      license: "Public Domain",
+      beatId: "beat-02",
+      assetTitle: "PLACEHOLDER_ASSET_02",
+      assetAuthor: "PLACEHOLDER_CREATOR_02",
+      license: "PLACEHOLDER_LICENSE",
       isAiGenerated: false,
-      panDirection: "left-to-right"
+      panDirection: "zoom-out"
     },
     {
-      id: "scene-3",
+      id: "scene-03",
       sceneIndex: 3,
-      beatId: "beat-3",
-      assetTitle: "Horapollo Hieroglyphica 1505 Woodcut",
-      assetAuthor: "Bibliothèque nationale de France",
-      license: "Public Domain",
+      beatId: "beat-03",
+      assetTitle: "PLACEHOLDER_ASSET_03",
+      assetAuthor: "PLACEHOLDER_CREATOR_03",
+      license: "PLACEHOLDER_LICENSE",
       isAiGenerated: false,
-      panDirection: "zoom-out"
+      panDirection: "zoom-in"
     },
     {
-      id: "scene-4",
+      id: "scene-04",
       sceneIndex: 4,
-      beatId: "beat-4",
-      assetTitle: "Ptolemy Cartouche diagram, Thomas Young 1814",
-      assetAuthor: "Royal Society Philosophical Transactions",
-      license: "Public Domain",
-      isAiGenerated: false,
-      panDirection: "zoom-in"
-    },
-    {
-      id: "scene-5",
-      sceneIndex: 5,
-      beatId: "beat-5",
-      assetTitle: "Phonetic alphabet table comparison",
-      assetAuthor: "Library of Congress Rare Book Division",
-      license: "Public Domain",
-      isAiGenerated: false,
-      panDirection: "right-to-left"
-    },
-    {
-      id: "scene-6",
-      sceneIndex: 6,
-      beatId: "beat-6",
-      assetTitle: "Portrait of Jean-François Champollion by Léon Cogniet (1831)",
-      assetAuthor: "Musée du Louvre, Paris",
-      license: "Public Domain",
-      isAiGenerated: false,
-      panDirection: "zoom-in"
-    },
-    {
-      id: "scene-7",
-      sceneIndex: 7,
-      beatId: "beat-7",
-      assetTitle: "Abu Simbel Temple Wall Rubbing",
-      assetAuthor: "Egyptian Antiquities Service Archival Plate",
-      license: "Public Domain",
-      isAiGenerated: false,
-      panDirection: "left-to-right"
-    },
-    {
-      id: "scene-8",
-      sceneIndex: 8,
-      beatId: "beat-8",
-      assetTitle: "Lettre à M. Dacier, original publication 1822",
-      assetAuthor: "Firmin Didot Père et Fils",
-      license: "Public Domain",
+      beatId: "beat-04",
+      assetTitle: "PLACEHOLDER_ASSET_04",
+      assetAuthor: "PLACEHOLDER_CREATOR_04",
+      license: "PLACEHOLDER_LICENSE",
       isAiGenerated: false,
       panDirection: "zoom-out"
     },
     {
-      id: "scene-9",
-      sceneIndex: 9,
-      beatId: "beat-9",
-      assetTitle: "Hieroglyphic alphabet chart by Champollion",
-      assetAuthor: "Grammaire égyptienne (1836)",
-      license: "Public Domain",
+      id: "scene-05",
+      sceneIndex: 5,
+      beatId: "beat-05",
+      assetTitle: "PLACEHOLDER_ASSET_05",
+      assetAuthor: "PLACEHOLDER_CREATOR_05",
+      license: "PLACEHOLDER_LICENSE",
       isAiGenerated: false,
       panDirection: "zoom-in"
     },
     {
-      id: "scene-10",
-      sceneIndex: 10,
-      beatId: "beat-10",
-      assetTitle: "Karnak Hypostyle Hall early archival photograph",
-      assetAuthor: "Francis Frith (1857)",
-      license: "Public Domain",
-      isAiGenerated: false,
-      panDirection: "right-to-left"
-    },
-    {
-      id: "scene-11",
-      sceneIndex: 11,
-      beatId: "beat-11",
-      assetTitle: "Rosetta Stone full context",
-      assetAuthor: "Public Domain Reference",
-      license: "Public Domain",
+      id: "scene-06",
+      sceneIndex: 6,
+      beatId: "beat-06",
+      assetTitle: "PLACEHOLDER_ASSET_06",
+      assetAuthor: "PLACEHOLDER_CREATOR_06",
+      license: "PLACEHOLDER_LICENSE",
       isAiGenerated: false,
       panDirection: "zoom-out"
     }
   ],
   attributions: [
     {
-      assetId: "ast-1",
-      title: "Rosetta Stone Granodiorite Plate",
-      creator: "British Museum / Wikimedia Commons",
-      sourceUrl: "https://commons.wikimedia.org/wiki/File:Rosetta_Stone.jpg",
-      license: "Public Domain (PDM)",
+      assetId: "PLACEHOLDER_ASSET_01",
+      title: "PLACEHOLDER_ASSET_01",
+      creator: "PLACEHOLDER_CREATOR_01",
+      sourceUrl: "https://example.invalid/PLACEHOLDER_ASSET_01",
+      license: "PLACEHOLDER_LICENSE",
       isAiGenerated: false
     },
     {
-      assetId: "ast-2",
-      title: "Portrait of Jean-François Champollion",
-      creator: "Léon Cogniet (1831) / Musée du Louvre",
-      sourceUrl: "https://commons.wikimedia.org/wiki/File:Champollion.jpg",
-      license: "Public Domain (PDM)",
+      assetId: "PLACEHOLDER_ASSET_02",
+      title: "PLACEHOLDER_ASSET_02",
+      creator: "PLACEHOLDER_CREATOR_02",
+      sourceUrl: "https://example.invalid/PLACEHOLDER_ASSET_02",
+      license: "PLACEHOLDER_LICENSE",
       isAiGenerated: false
     },
     {
-      assetId: "ast-3",
-      title: "Grammaire égyptienne original plates",
-      creator: "Champollion (1836) / BnF Gallica",
-      sourceUrl: "https://gallica.bnf.fr/ark:/12148/bpt6k10508535",
-      license: "Public Domain",
+      assetId: "PLACEHOLDER_ASSET_03",
+      title: "PLACEHOLDER_ASSET_03",
+      creator: "PLACEHOLDER_CREATOR_03",
+      sourceUrl: "https://example.invalid/PLACEHOLDER_ASSET_03",
+      license: "PLACEHOLDER_LICENSE",
+      isAiGenerated: false
+    },
+    {
+      assetId: "PLACEHOLDER_ASSET_04",
+      title: "PLACEHOLDER_ASSET_04",
+      creator: "PLACEHOLDER_CREATOR_04",
+      sourceUrl: "https://example.invalid/PLACEHOLDER_ASSET_04",
+      license: "PLACEHOLDER_LICENSE",
+      isAiGenerated: false
+    },
+    {
+      assetId: "PLACEHOLDER_ASSET_05",
+      title: "PLACEHOLDER_ASSET_05",
+      creator: "PLACEHOLDER_CREATOR_05",
+      sourceUrl: "https://example.invalid/PLACEHOLDER_ASSET_05",
+      license: "PLACEHOLDER_LICENSE",
+      isAiGenerated: false
+    },
+    {
+      assetId: "PLACEHOLDER_ASSET_06",
+      title: "PLACEHOLDER_ASSET_06",
+      creator: "PLACEHOLDER_CREATOR_06",
+      sourceUrl: "https://example.invalid/PLACEHOLDER_ASSET_06",
+      license: "PLACEHOLDER_LICENSE",
       isAiGenerated: false
     }
   ],

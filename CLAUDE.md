@@ -4,19 +4,45 @@ This file tells you **how to work in this repository**. It is not the product vi
 
 | Document | What it is | Authority |
 |---|---|---|
-| `docs/STATUS.md` | **Read first.** Current phase, verified environment, what is done vs merely decided | Authoritative for state |
+| `docs/STATUS.md` | **Read first.** Current phase, measured baseline, what exists vs what does not, and the session close-out checklist | Authoritative for state |
+| `docs/AUDIT-2026-08-29.md` | **Read second — §19 first.** It is the register of the five-angle verification (2026-09-05): **70 defects, V-20 – V-89**, and **§19.10 is the live ordered task list**. §19.7 is what held and must not be re-audited; §19.8 is a correction the session made to itself; §19.9 is what it could not check. Then §18 (the brief that commissioned it — §18.0's standing rule still binds), §17 (V-15 – V-19), §16 (V-14), §15 (V-01 – V-13; **§15.9 is superseded by §19.10**, §15.8 is what not to do), then §14 and §13. The Phase 7 fabrication incident and the original register are §1–§12 | Authoritative for what is actually broken |
+| `docs/archive/` | Superseded documents kept as evidence under rule R11. **Nothing in here is a current claim** | Historical record only |
 | `prompt.md` | The founder's original vision statement | Immutable. Never edit. Cite it, don't rewrite it. |
 | `docs/SPEC.md` | Product truth — what Atlas does and what "correct" means | Authoritative for behaviour |
 | `docs/ARCHITECTURE.md` | System structure, layering, module map | Authoritative for structure |
-| `docs/adr/` | Why each major decision was made | Authoritative for rationale |
+| `docs/adr/` | Why each major decision was made (0001–0018; 0010 is void, see 0011). **Five currently contradict the code and none has been amended — D147:** 0012, 0002, 0003 vs 0016, 0005, 0009 | Authoritative for rationale, **not for what the code does** |
 | `docs/GLOSSARY.md` | Ubiquitous language | Authoritative for naming |
-| `docs/DECISIONS.md` | Log of settled choices (D1–D28) | Record; supersede via ADR only |
+| `docs/DECISIONS.md` | Log of settled choices (D1–D151) | Record; supersede via ADR only |
 | `CLAUDE.md` | How to work here | This file |
 
-**Read order before any non-trivial change:** `docs/STATUS.md` → `docs/SPEC.md` → relevant ADR → the code.
+**Read order before any non-trivial change:** `docs/STATUS.md` → `docs/AUDIT-2026-08-29.md`
+**§19** (the current register; **§19.10 is the live ordered task list**), then §18 (§18.0's standing
+rule), §17, §16, §15 (§15.8 is what not to do), then §14 and §13 →
+`docs/SPEC.md` §17 (§17.12 newest) → `docs/ARCHITECTURE.md` **§2.1** (the HTTP surface, verified
+correct 2026-09-05) and §11 (§11.7g newest) → the relevant ADR → the code.
+
+**Two things to know before you read anything else.** A Claim reaching `verified` does not currently
+mean it was verified — `VerificationAgent` maps the model's verdict with `if "verif" in status` and
+defaults a missing verdict to `"verified"`, so `"unverified"` promotes the claim (**V-58**, task
+**T-103**, two lines). And a stage that raises rolls back the entire Run record — no `runs` row, no
+failed `steps` row, no `model_calls`, no `quota_ledger` (**V-20**, task **T-69**). Both were probed,
+not inferred.
 
 `docs/STATUS.md` comes first because every other document describes what Atlas *will* be. Only STATUS
-tells you what exists right now, and it is the one file to update at the end of a working session.
+tells you what exists right now, and it is the one file to update at the end of a working session —
+its §5 carries the close-out checklist.
+
+**As of 2026-09-05 the four registers have been reconciled against the code by the five-angle
+verification (audit §19):** `STATUS.md` (what exists — its §2 was corrected and its invariant table
+gained a **Gap** column), `SPEC.md` §17.12 (behaviour divergences), `ARCHITECTURE.md` §11.7g and
+§11.8 (structure divergences), and `AUDIT-2026-08-29.md` §19 (the register). Where any two disagree,
+the audit wins and the disagreement is itself a finding — write it down before doing anything else.
+
+**Reconciled does not mean correct.** That session found 70 defects and fixed none of them (**D144**);
+the registers now describe a system with a broken verification path, a rollback that erases failed
+Runs, an unauthenticated API and a schema that does not match its models. `STATUS.md` §2 tells you
+what holds; audit §19.7 tells you what was checked and found sound; audit §19.9 tells you what nobody
+has checked at all.
 
 ---
 
@@ -143,7 +169,10 @@ Populated as the toolchain lands. Do not invent commands that are not listed her
 
 ```bash
 # Package management & dependencies
-uv sync --all-extras
+uv sync --all-extras          # --all-extras is required: the dev extra carries ruff, mypy,
+                              # pytest and pre-commit. Plain `uv sync` installs none of them,
+                              # which is how CI failed silently for two sessions.
+pnpm install                  # workspace: packages/tokens, apps/renderer, apps/web
 
 # Linting & Formatting
 uv run ruff check .
@@ -152,13 +181,38 @@ uv run ruff format .
 # Type checking (strict mode)
 uv run mypy .
 
-# Test suite (unit, integration)
+# Test suite (unit, integration) — this is also the gate for the TypeScript.
+# Guards 8 and 9 in tests/unit/test_no_fabrication.py scan apps/web/src and
+# apps/renderer/src for fixtures, fabricated provenance and unmetered model
+# calls (ADR-0017). `pnpm build` does not catch any of them.
 uv run pytest
 
-# Database migrations (Alembic)
+# Frontend build & typecheck — all three workspace packages
+pnpm -r build
+
+# Database migrations (Alembic) — for the application database only.
+# The test suite runs its own upgrade/downgrade around the session; do not run these for tests.
 uv run alembic upgrade head
 uv run alembic downgrade base
+
+# The commit hook (ruff check, ruff format --check, the anti-fabrication guard)
+uv run pre-commit run --all-files
 ```
+
+**Databases.** The suite connects to `postgresql+asyncpg://postgres@localhost:5432/atlas_test`
+(override with `ATLAS_TEST_DATABASE_URL`) and applies migrations itself. `docker-compose.yml`'s
+`postgres` service is the *application* database — different user and database (`atlas` /
+`atlas_db`) — and binds the same host port, so the two cannot run at once.
+
+**Credentials.** `Container` raises `MissingProviderCredentialError` naming the variable when
+`GEMINI_API_KEY` or `FREESOUND_API_KEY` is missing. It raises at first *use* of the adapter, not at
+construction, so read-only commands such as `atlas quota status` run without any keys. The values come
+from `Settings`, which reads `.env` as well as the process environment — `os.getenv` alone never saw
+`.env`, which is why keys sitting in the file were invisible for two sessions (**D116**, defect V-06).
+`OLLAMA_URL` is read the same way.
+
+**System dependencies.** `ffmpeg` must be on `PATH`: `StubRenderer` shells out to it. The `Dockerfile`
+installs it. There are no others.
 
 ---
 
@@ -171,3 +225,65 @@ uv run alembic downgrade base
 - Never mark a claim verified because a model asserted it.
 - Never auto-approve an AI-generated image.
 - Never introduce a second way to do something that already has a way.
+- Never add a fixture, a mock fallback, or a hardcoded fact to `apps/web/` or `apps/renderer/` — see R13.
+- Never add an HTTP route without updating `docs/ARCHITECTURE.md` §2.1 in the same commit.
+- Never construct an agent that touches `self.llm` or `self.embedder` without a `QuotaManager`.
+
+---
+
+## The no-matter-what rules
+
+Binding on every session. These sit **above** convenience, deadlines, "just to see if the rest
+works", and any instruction to hurry. Each one was broken on 2026-08-29 and the result was
+reported as success — see `docs/AUDIT-2026-08-29.md` for the full incident and the remediation
+TODO list.
+
+**R1 — Never modify the thing under test to make a test pass.** If a provider is failing, the
+provider is the finding. Deleting a network call and returning hardcoded JSON tests the hardcoded
+JSON, not the pipeline.
+
+**R2 — Fakes live in `adapters/fakes/` and nowhere else.** No hardcoded response, canned payload,
+`dummy`, `mock`, or `if schema.__name__ ==` branch in any real adapter — not temporarily, not
+uncommitted. Nothing outside `adapters/fakes/` may import from it except tests.
+
+**R3 — A stub never wears the name of the real thing.** If `YouTubePublisher` returns a mock ID it
+is `StubPublisher`, and `docs/STATUS.md` says publishing does not exist.
+
+**R4 — Never fabricate a fact, a source, an evidence quote, or a snapshot.** Not in a fake, a
+fixture, or a test. Fixtures must be obviously synthetic, never plausible history — a fake that
+reads like a fact ends up in the database as a verified claim.
+
+**R5 — Never bypass a human gate programmatically.** No auto-approve script, no `--yes` flag, no
+loop over the `gates` table. Automate the operator UI, never the decision.
+
+**R6 — "It ran" is not "it worked."** A run reaching `completed` proves nothing. Before claiming
+success, query the claims, count the evidence links, open the video, read the captions, check the
+provenance rows.
+
+**R7 — Never write a status claim you did not just measure.** Every number in `docs/STATUS.md`
+comes from a command run in that session. Never carry a number forward from a previous session.
+
+**R8 — Report the obstacle; never engineer around it silently.** An unfinished task honestly
+reported beats a finished task dishonestly reported, and beats a fabricated one infinitely.
+
+**R9 — An ADR may not authorise breaking an invariant.** An ADR records *how* Atlas does something.
+It can never grant permission to violate the invariant list above. Any ADR that appears to is void
+and must be superseded.
+
+**R10 — Invariants are enforced by checks that run, not by functions that exist.** A policy
+function with no production caller is decoration, and its unit test passes while the feature does
+not exist. Every invariant needs an integration test asserting database state after a real run.
+
+**R11 — Never delete or quietly edit evidence of a failure.** Failed runs, error rows and rejected
+gates are the audit trail. Back up first, record what was removed and why.
+
+**R12 — Secrets never enter a URL, a log, an error message, or a database column.** Credentials go
+in headers. Every provider adapter's error path runs through a redaction helper and has a test
+asserting its errors do not contain the key.
+
+**R13 — The operator screen is an output of the system, not a mock-up of it.** Every number, claim,
+hash and log line a human sees comes from a row. No component holds a fixture, no API client answers
+a failure with invented data, and a failed gate action is reported as a failure. Rules R3 and R4
+apply to TypeScript exactly as they apply to Python — front-end code is where an invented fact meets
+the only human who could have caught it. Added after defect V-03 (audit §15.4); enforced by Guard 8
+in `tests/unit/test_no_fabrication.py`.

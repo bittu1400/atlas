@@ -6,4 +6,5 @@ class NoOpSpeech(Speech):
 
     async def synthesize(self, text: str, voice_id: str) -> tuple[bytes, float]:
         """Return zero bytes and 0.0 duration."""
+        _ = (text, voice_id)
         return b"", 0.0

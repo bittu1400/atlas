@@ -16,7 +16,7 @@ This document visualizes the complete system architecture of Atlas, demonstratin
 |      +--------------+---------------+             +---------------+---------------+   |
 +---------------------|---------------------------------------------|-------------------+
                       |                                             |
-                      | HTTP / SSE                                  | CLI Invocation
+                      | HTTP (polling)                              | CLI Invocation
                       v                                             v
 +---------------------------------------------------------------------------------------+
 |                              LAYER 4: ENTRYPOINTS                                     |
@@ -25,7 +25,7 @@ This document visualizes the complete system architecture of Atlas, demonstratin
 |   |             FastAPI App             |     |          Dramatiq Worker          |   |
 |   |  - Route parsing & serialization    |     |  - Async pipeline step execution  |   |
 |   |  - Enqueues jobs to Postgres queue  |     |  - Acquires shared GPU semaphore  |   |
-|   |  - SSE streams for live UI state    |     |  - Checkpoints step output rows   |   |
+|   |  - 11 routes; see ARCHITECTURE 2.1  |     |  - Checkpoints step output rows   |   |
 |   +------------------+------------------+     +-----------------+-----------------+   |
 +----------------------|------------------------------------------|---------------------+
                        |                                          |
@@ -57,10 +57,11 @@ This document visualizes the complete system architecture of Atlas, demonstratin
 |  +---------------------------------------+ |    |  +--------------------------------+ |
 |  | Persistence (SQLAlchemy 2.0 Repos):   | |    |  | Knowledge Core:                | |
 |  |  - KnowledgeRepository                | |    |  |  - KnowledgeObjectVersion      | |
-|  |  - SourceRepository                   | |    |  |  - Claim, Evidence, Source     | |
-|  |  - FocusRepository                    | |    |  |  - Snapshot, ClaimUsage        | |
-|  |  - ExecutionRepository                | |    |  |  - Upcast-on-read pure fns     | |
-|  |  - PublishingRepository               | |    |  +--------------------------------+ |
+|  |  - SourceRepository                   | |    |  |  - Claim (+ append-only         | |
+|  |  - FocusRepository                    | |    |  |    ClaimVersion), Evidence,    | |
+|  |  - ExecutionRepository                | |    |  |    Source, Snapshot, ClaimUsage| |
+|  |  - PublishingRepository               | |    |  |  - Upcast-on-read pure fns     | |
+|  |  - ProductionRepository (ADR-0016)    | |    |  +--------------------------------+ |
 |  +---------------------------------------+ |    |                                     |
 |                                            |    |  +--------------------------------+ |
 |  +---------------------------------------+ |    |  | Focus & Scoping:               | |
@@ -70,10 +71,12 @@ This document visualizes the complete system architecture of Atlas, demonstratin
 |                                            |    |  +--------------------------------+ |
 |  +---------------------------------------+ |    |                                     |
 |  | External Providers (Tier 0 / 1 / 2):  | |    |  +--------------------------------+ |
-|  |  - GeminiAdapter (Tier 2 Frontier)    | |    |  | Execution State Machine:       | |
-|  |  - OllamaAdapter (Tier 1 Local 8GB)   | |    |  |  - Run, Step, Gate, Approval   | |
-|  |  - RemotionRenderer (Node Bridge)     | |    |  |  - ResourceLock, QuotaLedger   | |
-|  +---------------------------------------+ |    |  +--------------------------------+ |
+|  |  - GeminiLlm (Tier 2 Frontier)        | |    |  | Execution State Machine:       | |
+|  |  - OllamaLlm (Tier 1 — unwired, T-30) | |    |  |  - Run, Step, Gate, Approval   | |
+|  |  - WikipediaSearch, HttpSourceFetcher | |    |  |  - ResourceLock, QuotaLedger   | |
+|  |  - StubRenderer  (no Remotion yet)    | |    |  |  - PipelineStage (18 stages)   | |
+|  |  - StubPublisher (publishes nothing)  | |    |  +--------------------------------+ |
+|  +---------------------------------------+ |    |                                     |
 +---------------------+----------------------+    +-------------------------------------+
                       |
                       v
@@ -81,8 +84,8 @@ This document visualizes the complete system architecture of Atlas, demonstratin
 |                              INFRASTRUCTURE & PERSISTENCE                             |
 |                                                                                       |
 |   +------------------------------------+      +-----------------------------------+   |
-|   |       PostgreSQL 18 Database       |      |         Filesystem Storage        |   |
-|   |  - 26 Relational Schema Tables     |      |  - Content-addressed Blobs:       |   |
+|   |       PostgreSQL Database          |      |         Filesystem Storage        |   |
+|   |  - 30 Relational Schema Tables     |      |  - Content-addressed Blobs:       |   |
 |   |  - Row-per-version KO history      |      |    var/blobs/sha256/ab/cd/<hash>  |   |
 |   |  - Foreign-key Traceability Chain  |      |  - Source Snapshots:              |   |
 |   |  - Append-only Quota Ledger        |      |    var/snapshots/...              |   |

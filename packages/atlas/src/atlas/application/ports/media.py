@@ -17,6 +17,7 @@ class ImageCandidate(BaseModel):
     author: str = Field(description="Author / photographer / creator attribution")
     source_archive: str = Field(description="Origin archive (e.g. Wikimedia Commons, Smithsonian)")
     preview_url: str | None = Field(default=None, description="Low-res thumbnail URL")
+    is_ai_generated: bool = Field(default=False, description="Whether the image was AI generated")
 
 
 class SoundItem(BaseModel):

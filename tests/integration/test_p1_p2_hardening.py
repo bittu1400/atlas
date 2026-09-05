@@ -33,11 +33,11 @@ from atlas.platform.errors import (
 from atlas.platform.ids import (
     generate_approval_id,
     generate_gate_id,
-    generate_ko_id,
     generate_run_id,
     generate_step_id,
     generate_topic_id,
     generate_trace_id,
+    knowledge_object_id_for_topic,
 )
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -232,7 +232,7 @@ async def test_b03_ko_version_ordering_enforcement(db_session: AsyncSession) -> 
         Topic(id=topic_id, title="Topic KO", domain_id="dom_animal", created_at=now)
     )
 
-    ko_id = generate_ko_id()
+    ko_id = knowledge_object_id_for_topic("topic_p1_p2_hardening_a")
 
     # Initial version cannot be 2
     kov_bad = KnowledgeObjectVersion(
@@ -498,7 +498,7 @@ async def test_c05_ko_history_batching(db_session: AsyncSession) -> None:
         Topic(id=topic_id, title="History Topic", domain_id="dom_animal", created_at=now)
     )
 
-    ko_id = generate_ko_id()
+    ko_id = knowledge_object_id_for_topic("topic_p1_p2_hardening_b")
 
     # Create version 1
     kov_1 = KnowledgeObjectVersion(

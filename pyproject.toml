@@ -25,6 +25,7 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "ruff>=0.4.0",
     "mypy>=1.10.0",
+    "pre-commit>=3.7.0",
 ]
 
 [build-system]
@@ -35,7 +36,10 @@ build-backend = "hatchling.build"
 atlas = "apps.cli.main:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["packages/atlas/src/atlas", "apps", "packages/fakes"]
+packages = ["packages/atlas/src/atlas", "apps"]
+
+[tool.hatch.build.targets.wheel.sources]
+"packages/atlas/src" = ""
 
 [tool.ruff]
 line-length = 100

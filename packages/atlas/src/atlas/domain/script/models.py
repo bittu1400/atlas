@@ -9,7 +9,7 @@ As specified in SPEC §4, §6, and ADR-0006:
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class Beat(BaseModel):
@@ -87,9 +87,6 @@ class TimingPlan(BaseModel):
 
     id: str = Field(description="Unique Timing Plan ID")
     script_id: str = Field(description="Associated Script ID")
-    total_duration_seconds: float = Field(
-        default=60.0, description="Total video runtime in seconds"
-    )
     beat_timings: list[BeatTiming] = Field(
         min_length=1, description="Exact timeline allocations per beat"
     )
@@ -98,3 +95,14 @@ class TimingPlan(BaseModel):
     )
     metadata: dict[str, Any] = Field(default_factory=dict, description="Pacing profile metadata")
     created_at: datetime = Field(description="Creation timestamp in UTC")
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def total_duration_seconds(self) -> float:
+        """Total runtime, derived from the timeline rather than supplied.
+
+        It was a plain field defaulting to 60.0, which meant a plan carrying
+        3.5 seconds of beats reported a full minute and passed the judge's
+        58-62 s deterministic check untouched (defect R-04, task T-20).
+        """
+        return round(max(bt.end_time_seconds for bt in self.beat_timings), 2)

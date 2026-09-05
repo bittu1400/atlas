@@ -70,7 +70,7 @@ class JudgeAgent:
 
         # 3. Route call and meter quota
         route = RoutingPolicy.get_route(TaskKind.QUALITY_JUDGING)
-        self.quota_mgr.check_rate_limits(route.provider)
+        await self.quota_mgr.check_rate_limits(route.provider)
 
         request = LlmRequest(
             prompt=prompt_text,
@@ -82,8 +82,8 @@ class JudgeAgent:
         extracted = await self.llm.extract(request, QualityJudgePayload)
 
         await self.quota_mgr.record_invocation(
-            provider=route.provider,
-            model_id=route.model_id,
+            provider=extracted.provider,
+            model_id=extracted.model_id,
             prompt_version="quality_judge_v1",
             parameters={"temperature": route.temperature},
             code_version="phase-5-v1",

@@ -25,12 +25,18 @@ from atlas.platform.clock import utc_now
 from atlas.platform.ids import (
     generate_claim_id,
     generate_evidence_id,
+    knowledge_object_id_for_topic,
 )
 from atlas.platform.logging import get_logger
 from atlas.platform.quota import QuotaManager
 from atlas.prompts.loader import render_prompt
 
 logger = get_logger("application.agents.extraction")
+
+
+def _normalize_whitespace(text: str) -> str:
+    """Normalize internal whitespace for verbatim quote comparison."""
+    return " ".join(text.split())
 
 
 @dataclass(frozen=True)
@@ -77,7 +83,8 @@ class ExtractionAgent:
         snapshot: Snapshot = await self.source_repo.get_snapshot(snapshot_id)
         source: Source = await self.source_repo.get_source(snapshot.source_id)
         content_bytes = await self.storage.get(snapshot.storage_key)
-        raw_text = content_bytes.decode("utf-8", errors="replace")[:8000]
+        decoded_text = content_bytes.decode("utf-8", errors="replace")
+        raw_text = decoded_text[:8000]
 
         # 2. Render versioned prompt template
         prompt_text = render_prompt(
@@ -91,7 +98,7 @@ class ExtractionAgent:
 
         # 3. Route call and verify rate limits
         route = RoutingPolicy.get_route(TaskKind.CLAIM_EXTRACTION)
-        self.quota_mgr.check_rate_limits(route.provider)
+        await self.quota_mgr.check_rate_limits(route.provider)
 
         request = LlmRequest(
             prompt=prompt_text,
@@ -105,8 +112,8 @@ class ExtractionAgent:
 
         # 5. Record quota usage in ledger
         await self.quota_mgr.record_invocation(
-            provider=route.provider,
-            model_id=route.model_id,
+            provider=extracted.provider,
+            model_id=extracted.model_id,
             prompt_version="claim_extraction_v1",
             parameters={"temperature": route.temperature},
             code_version="phase-5-v1",
@@ -119,21 +126,32 @@ class ExtractionAgent:
 
         payload: ExtractionPayload = extracted.data
 
-        # 6. Save extracted Evidence records
+        # 6. Save extracted Evidence records (Enforce Invariant 1: Verbatim Substring matching)
+        normalized_snapshot = _normalize_whitespace(decoded_text)
         evidence_domain_objs: list[Evidence] = []
-        for ev_item in payload.evidence:
-            ev = Evidence(
-                id=generate_evidence_id(),
-                source_id=source.id,
-                snapshot_id=snapshot.id,
-                locator=ev_item.locator,
-                quote=ev_item.quote,
-                stance=ev_item.stance,
-                confidence=ev_item.confidence,
-                extracted_at=utc_now(),
-            )
-            await self.source_repo.save_evidence(ev)
-            evidence_domain_objs.append(ev)
+        evidence_index_map: dict[int, Evidence] = {}
+        for idx, ev_item in enumerate(payload.evidence):
+            normalized_quote = _normalize_whitespace(ev_item.quote)
+            if normalized_quote and normalized_quote in normalized_snapshot:
+                ev = Evidence(
+                    id=generate_evidence_id(),
+                    source_id=source.id,
+                    snapshot_id=snapshot.id,
+                    locator=ev_item.locator,
+                    quote=ev_item.quote,
+                    stance=ev_item.stance,
+                    confidence=ev_item.confidence,
+                    extracted_at=utc_now(),
+                )
+                await self.source_repo.save_evidence(ev)
+                evidence_domain_objs.append(ev)
+                evidence_index_map[idx] = ev
+            else:
+                logger.warning(
+                    "evidence.rejected_not_verbatim",
+                    quote=ev_item.quote,
+                    snapshot_id=snapshot.id,
+                )
 
         # 7. Save extracted Claims and explicit links
         claim_domain_objs: list[Claim] = []
@@ -143,31 +161,65 @@ class ExtractionAgent:
                 text=cl_item.text,
                 assertion_type=cl_item.assertion_type,
                 confidence=cl_item.confidence,
-                status=ClaimStatus.VERIFIED,  # Candidate for verification agent pass
+                status=ClaimStatus.UNVERIFIED,  # Unverified until VerificationAgent verifies
                 created_at=utc_now(),
             )
-            await self.source_repo.save_claim(cl)
+            await self.source_repo.save_claim(
+                cl,
+                actor_id="agent.extraction",
+                reason=f"Extracted from snapshot {snapshot.id}",
+            )
             claim_domain_objs.append(cl)
 
         # 8. Link Claims to Evidence
+        linked_claim_ids: set[str] = set()
         for link_item in payload.links:
-            if link_item.claim_index < len(claim_domain_objs) and link_item.evidence_index < len(
-                evidence_domain_objs
+            if (
+                link_item.claim_index < len(claim_domain_objs)
+                and link_item.evidence_index in evidence_index_map
             ):
+                claim_id = claim_domain_objs[link_item.claim_index].id
                 link = ClaimEvidenceLink(
-                    claim_id=claim_domain_objs[link_item.claim_index].id,
-                    evidence_id=evidence_domain_objs[link_item.evidence_index].id,
+                    claim_id=claim_id,
+                    evidence_id=evidence_index_map[link_item.evidence_index].id,
                     stance=link_item.stance,
                     notes=link_item.notes,
                 )
                 await self.source_repo.link_claim_evidence(link)
+                # Only a link that was actually written counts. Deriving this set
+                # from the raw payload instead would admit claims whose only quote
+                # was rejected as non-verbatim, and Invariant 1 forbids that.
+                linked_claim_ids.add(claim_id)
 
         # 9. Create or update Knowledge Object Version
-        ko_id = f"ko_{topic_id}"
-        all_claim_ids = [c.id for c in claim_domain_objs]
+        ko_id = knowledge_object_id_for_topic(topic_id)
+
+        all_claim_ids = []
+        for c in claim_domain_objs:
+            if c.id in linked_claim_ids:
+                all_claim_ids.append(c.id)
+            else:
+                # Rule R2/Invariant 1: claim with no evidence ends unsupported
+                c_unsupported = Claim(
+                    id=c.id,
+                    text=c.text,
+                    assertion_type=c.assertion_type,
+                    confidence=c.confidence,
+                    status=ClaimStatus.UNSUPPORTED,
+                    created_at=c.created_at,
+                )
+                await self.source_repo.save_claim(
+                    c_unsupported,
+                    actor_id="agent.extraction",
+                    reason="No verbatim evidence quote survived extraction",
+                )
+
+        current_ko = await self.knowledge_repo.get_current(ko_id)
+        next_version = (current_ko.version + 1) if current_ko else 1
+
         ko_version = KnowledgeObjectVersion(
             ko_id=ko_id,
-            version=1,
+            version=next_version,
             topic_id=topic_id,
             status=KnowledgeObjectStatus.DRAFT,
             actor_id="agent.extraction",
@@ -195,5 +247,5 @@ class ExtractionAgent:
             claims_count=len(claim_domain_objs),
             evidence_count=len(evidence_domain_objs),
             knowledge_object_id=ko_id,
-            ko_version=1,
+            ko_version=next_version,
         )

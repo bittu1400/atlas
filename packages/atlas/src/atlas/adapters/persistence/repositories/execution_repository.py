@@ -21,6 +21,7 @@ from atlas.domain.execution.models import (
     IdempotencyKey,
     ModelCall,
     QuotaLedgerEntry,
+    RejectionFeedback,
     ResourceLock,
     Run,
     RunStatus,
@@ -401,6 +402,31 @@ class ExecutionRepository:
         await self.session.flush()
         return approval
 
+    async def list_approvals_for_run(self, run_id: str) -> list[Approval]:
+        """List every recorded human decision for a Run, oldest first.
+
+        Invariant 9 asks whether a person approved, not whether a gate row says
+        `approved`; only an Approval row carries the actor who decided.
+        """
+        stmt = (
+            select(ApprovalTable)
+            .where(ApprovalTable.run_id == run_id)
+            .order_by(ApprovalTable.created_at.asc())
+        )
+        rows = (await self.session.execute(stmt)).scalars().all()
+        return [
+            Approval(
+                id=r.id,
+                gate_id=r.gate_id,
+                run_id=r.run_id,
+                actor_id=r.actor_id,
+                decision=ApprovalDecision(r.decision),
+                feedback=RejectionFeedback.model_validate(r.feedback) if r.feedback else None,
+                created_at=r.created_at,
+            )
+            for r in rows
+        ]
+
     # =========================================================================
     # Resource Locks (GPU Semaphore Lease)
     # =========================================================================
@@ -523,6 +549,35 @@ class ExecutionRepository:
         self.session.add(row)
         await self.session.flush()
         return call
+
+    async def list_model_calls_for_run(self, run_id: str) -> list[ModelCall]:
+        """Return every metered model call for a Run, newest first."""
+        stmt = (
+            select(ModelCallTable)
+            .where(ModelCallTable.run_id == run_id)
+            .order_by(ModelCallTable.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return [
+            ModelCall(
+                id=row.id,
+                run_id=row.run_id,
+                step_id=row.step_id,
+                provider=row.provider,
+                model_id=row.model_id,
+                prompt_version=row.prompt_version,
+                parameters=row.parameters or {},
+                code_version=row.code_version,
+                input_tokens=row.input_tokens,
+                output_tokens=row.output_tokens,
+                latency_ms=row.latency_ms,
+                cached=row.cached,
+                outcome=row.outcome,
+                cost_usd=row.cost_usd,
+                created_at=row.created_at,
+            )
+            for row in result.scalars().all()
+        ]
 
     async def record_quota_consumption(self, entry: QuotaLedgerEntry) -> QuotaLedgerEntry:
         """Record consumption in append-only quota ledger."""

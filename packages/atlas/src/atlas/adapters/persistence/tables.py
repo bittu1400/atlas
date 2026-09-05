@@ -165,11 +165,41 @@ class EvidenceTable(Base):
 
 
 class ClaimTable(Base):
-    """Atomic factual statement."""
+    """Immutable identity of an atomic factual statement.
+
+    Carries no mutable state: every field a Claim can change lives in
+    `claim_versions`. Invariant 4 forbids editing knowledge in place, and a
+    stable identity row is what lets `claim_evidence` and
+    `knowledge_object_claims` keep foreign keys across revisions.
+    """
 
     __tablename__ = "claims"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    evidence_links: Mapped[list["ClaimEvidenceTable"]] = relationship(
+        back_populates="claim", cascade="all, delete-orphan"
+    )
+    usages: Mapped[list["ClaimUsageTable"]] = relationship(back_populates="claim")
+    versions: Mapped[list["ClaimVersionTable"]] = relationship(
+        back_populates="claim", cascade="all, delete-orphan"
+    )
+
+
+class ClaimVersionTable(Base):
+    """Append-only revision of a Claim's mutable state (Invariant 4).
+
+    A status transition writes a new row; the previous row is never touched, so
+    "who changed this claim to verified, and why" is always answerable.
+    """
+
+    __tablename__ = "claim_versions"
+
+    claim_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("claims.id", ondelete="CASCADE"), primary_key=True
+    )
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     assertion_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
@@ -179,23 +209,26 @@ class ClaimTable(Base):
     inferred_from_claim_ids: Mapped[list[Any]] = mapped_column(
         JsonType, nullable=False, default=list
     )
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    evidence_links: Mapped[list["ClaimEvidenceTable"]] = relationship(
-        back_populates="claim", cascade="all, delete-orphan"
-    )
-    usages: Mapped[list["ClaimUsageTable"]] = relationship(back_populates="claim")
+    claim: Mapped["ClaimTable"] = relationship(back_populates="versions")
 
     __table_args__ = (
         CheckConstraint(
             "assertion_type IN ('fact', 'inference', 'opinion', 'contested')",
-            name="claims_assertion_type_check",
+            name="claim_versions_assertion_type_check",
         ),
         CheckConstraint(
-            "status IN ('verified', 'unsupported', 'refuted', 'contested')",
-            name="claims_status_check",
+            "status IN ('verified', 'unverified', 'unsupported', 'refuted', 'contested')",
+            name="claim_versions_status_check",
         ),
-        CheckConstraint("confidence >= 0.0 AND confidence <= 1.0", name="claims_confidence_check"),
+        CheckConstraint(
+            "confidence >= 0.0 AND confidence <= 1.0", name="claim_versions_confidence_check"
+        ),
+        CheckConstraint("version >= 1", name="claim_versions_version_check"),
+        Index("ix_claim_versions_claim_version", "claim_id", "version"),
     )
 
 
@@ -688,4 +721,112 @@ class QuotaLedgerTable(Base):
         CheckConstraint("window_type IN ('minute', 'day')", name="quota_window_type_check"),
         CheckConstraint("tokens_consumed >= 0", name="quota_tokens_consumed_check"),
         CheckConstraint("requests_consumed >= 0", name="quota_requests_consumed_check"),
+    )
+
+
+# ============================================================================
+# Production Artifact Models (SPEC §6 stages 8-15, ADR-0015)
+# ============================================================================
+
+
+class ScriptTable(Base):
+    """Persisted Script produced by stage 8 and approved at the stage 9 gate.
+
+    Stages 10-16 read this row instead of regenerating; without it the artifact
+    the operator approved is not the artifact that gets rendered.
+    """
+
+    __tablename__ = "scripts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    topic_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    knowledge_object_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    ko_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    story_angle: Mapped[str] = mapped_column(Text, nullable=False)
+    target_duration_seconds: Mapped[float] = mapped_column(Float, nullable=False, default=60.0)
+    beats: Mapped[list[Any]] = mapped_column(JsonType, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("ko_version >= 1", name="scripts_ko_version_check"),
+        CheckConstraint("target_duration_seconds > 0", name="scripts_target_duration_check"),
+    )
+
+
+class TimingPlanTable(Base):
+    """Persisted TimingPlan: the canonical pacing artifact for one Script."""
+
+    __tablename__ = "timing_plans"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    script_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("scripts.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    total_duration_seconds: Mapped[float] = mapped_column(Float, nullable=False)
+    beat_timings: Mapped[list[Any]] = mapped_column(JsonType, nullable=False, default=list)
+    caption_cues: Mapped[list[Any]] = mapped_column(JsonType, nullable=False, default=list)
+    meta: Mapped[dict[str, Any]] = mapped_column(JsonType, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("total_duration_seconds > 0", name="timing_plans_total_duration_check"),
+    )
+
+
+class StoryboardTable(Base):
+    """Persisted Storyboard binding Beats to licensed archival assets."""
+
+    __tablename__ = "storyboards"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    script_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("scripts.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    timing_plan_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("timing_plans.id", ondelete="RESTRICT"), nullable=False
+    )
+    scenes: Mapped[list[Any]] = mapped_column(JsonType, nullable=False, default=list)
+    render_targets: Mapped[list[Any]] = mapped_column(JsonType, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class RenderArtifactTable(Base):
+    """Persisted render output, one row per aspect ratio."""
+
+    __tablename__ = "render_artifacts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    storyboard_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("storyboards.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    render_target: Mapped[str] = mapped_column(String(32), nullable=False)
+    video_storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    captions_storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    duration_seconds: Mapped[float] = mapped_column(Float, nullable=False)
+    file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    meta: Mapped[dict[str, Any]] = mapped_column(JsonType, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "render_target IN ('vertical', 'horizontal')",
+            name="render_artifacts_target_check",
+        ),
+        CheckConstraint("duration_seconds > 0", name="render_artifacts_duration_check"),
+        CheckConstraint("file_size_bytes >= 0", name="render_artifacts_size_check"),
+        UniqueConstraint(
+            "run_id", "storyboard_id", "render_target", name="uq_render_artifact_target"
+        ),
     )

@@ -3,17 +3,17 @@ from dramatiq.brokers.stub import StubBroker
 
 dramatiq.set_broker(StubBroker())
 
-import os
-from collections.abc import AsyncGenerator
+import os  # noqa: E402
+from collections.abc import AsyncGenerator  # noqa: E402
 
-import pytest_asyncio
-from sqlalchemy.ext.asyncio import (
+import pytest_asyncio  # noqa: E402
+from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import NullPool  # noqa: E402
 
 TEST_DATABASE_URL = os.getenv(
     "ATLAS_TEST_DATABASE_URL", "postgresql+asyncpg://postgres@localhost:5432/atlas_test"
