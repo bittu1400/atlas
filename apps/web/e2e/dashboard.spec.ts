@@ -212,3 +212,123 @@ test.describe('Operator Dashboard (Anti-Fabrication & API Honesty)', () => {
     await expect(page.getByText(`sha256:${dynamicShaPrefix}…`)).toBeVisible();
   });
 });
+
+// Task T-64: the Launch form's three inputs were free text over IDs only the
+// terminal could reveal, so an operator's first feedback on a typo was a 404.
+// These assertions hold the pickers to the same standard as the panels above:
+// every option is a row the API returned, and an empty table is shown as empty
+// rather than filled in with something plausible (R13).
+
+test.describe('Launch form pickers (T-64)', () => {
+  const emptyDashboard = async (page: import('@playwright/test').Page) => {
+    await page.route('/api/runs', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    );
+    await page.route('/api/gates/pending', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    );
+  };
+
+  test('Assertion 5: the Topic picker lists exactly what /topics returned', async ({ page }) => {
+    const synthTopic = 'topic_synth_cartography_77';
+
+    await emptyDashboard(page);
+    await page.route('/api/topics', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: synthTopic,
+            title: 'PLACEHOLDER_SYNTH_TITLE',
+            domain_id: 'dom_synth_01',
+            entity_id: null,
+            status: 'proposed',
+            created_at: new Date().toISOString(),
+          },
+        ]),
+      }),
+    );
+    await page.route('/api/channels', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    );
+    await page.route('/api/domains', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    );
+    await page.route('/api/focuses', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    );
+
+    await page.goto('/');
+
+    const picker = page.locator('#topic-id');
+    await expect(picker.locator('option', { hasText: synthTopic })).toHaveCount(1);
+    // One synthetic Topic plus the placeholder option, and nothing invented.
+    await expect(picker.locator('option')).toHaveCount(2);
+  });
+
+  test('Assertion 6: an empty /topics is shown as empty, not filled in', async ({ page }) => {
+    await emptyDashboard(page);
+    for (const path of ['/api/topics', '/api/channels', '/api/domains', '/api/focuses']) {
+      await page.route(path, (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+      );
+    }
+
+    await page.goto('/');
+
+    await expect(page.locator('#topic-id')).toContainText('No Topics exist yet');
+    await expect(page.locator('#topic-id').locator('option')).toHaveCount(1);
+  });
+
+  test('Assertion 7: a refused Topic creation is reported, not swallowed', async ({ page }) => {
+    await emptyDashboard(page);
+    await page.route('/api/topics', async (route) => {
+      if (route.request().method() === 'POST') {
+        await route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: 'DuplicateEntityError',
+            message: "Topic 'topic_synth_dupe_01' already exists",
+            entity_type: 'Topic',
+            entity_id: 'topic_synth_dupe_01',
+          }),
+        });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+    await page.route('/api/channels', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    );
+    await page.route('/api/focuses', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    );
+    await page.route('/api/domains', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'dom_synth_01',
+            name: 'PLACEHOLDER_SYNTH_DOMAIN',
+            description: 'PLACEHOLDER_SYNTH_DESCRIPTION',
+            research_profile: {},
+          },
+        ]),
+      }),
+    );
+
+    await page.goto('/');
+
+    await page.getByRole('button', { name: 'New topic' }).click();
+    await page.locator('#new-topic-id').fill('topic_synth_dupe_01');
+    await page.locator('#new-topic-title').fill('PLACEHOLDER_SYNTH_TITLE');
+    await page.locator('#new-topic-domain').selectOption('dom_synth_01');
+    await page.getByRole('button', { name: 'Create Topic' }).click();
+
+    await expect(page.getByTestId('launcher-error')).toContainText('409');
+    await expect(page.locator('#new-topic-id')).toHaveValue('topic_synth_dupe_01');
+  });
+});

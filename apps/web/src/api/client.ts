@@ -1,14 +1,18 @@
 /// <reference types="vite/client" />
 import {
   ApprovalItem,
+  ChannelItem,
   ApproveGatePayload,
   GateItem,
   QuotaStatus,
   RejectGatePayload,
+  DomainItem,
+  FocusItem,
   RunItem,
   RunKnowledge,
   StepItem,
   TelemetryEvent,
+  TopicItem,
 } from './types';
 
 // There are no mock fallbacks here, in any environment.
@@ -80,4 +84,53 @@ export const api = {
     }),
 
   getQuota: () => request<QuotaStatus>('/quota'),
+
+  // The rows a Run needs before it can exist (T-64). Until these routes
+  // existed the Launch form was three free-text boxes over IDs only the
+  // terminal could reveal.
+  getDomains: () => request<DomainItem[]>('/domains'),
+
+  createDomain: (payload: { id: string; name: string; description: string }) =>
+    request<DomainItem>('/domains', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getTopics: () => request<TopicItem[]>('/topics'),
+
+  createTopic: (payload: {
+    id: string;
+    title: string;
+    domain_id: string;
+    entity_id?: string;
+  }) =>
+    request<TopicItem>('/topics', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getChannels: () => request<ChannelItem[]>('/channels'),
+
+  createChannel: (payload: {
+    id: string;
+    name: string;
+    audience_timezone: string;
+  }) =>
+    request<ChannelItem>('/channels', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getFocuses: () => request<FocusItem[]>('/focuses'),
+
+  createFocus: (payload: {
+    name: string;
+    facets: { dimension: string; value: string }[];
+    scope_mode: string;
+    actor_id: string;
+  }) =>
+    request<FocusItem>('/focuses', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 };

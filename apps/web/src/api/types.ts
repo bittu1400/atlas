@@ -155,3 +155,60 @@ export interface TelemetryEvent {
   status: string;
   detail: Record<string, string>;
 }
+
+// =============================================================================
+// The rows a Run needs before it can exist — ARCHITECTURE §2.1 (T-64)
+//
+// These shapes are transcribed from that table, not guessed. The dashboard once
+// invented an API it could not reach and rendered fixtures over the gap
+// (defect V-03); the table exists so that cannot happen twice.
+// =============================================================================
+
+export type TopicStatus =
+  | 'proposed'
+  | 'approved'
+  | 'researching'
+  | 'knowledge_ready'
+  | 'blocked'
+  | 'rejected'
+  | 'published';
+
+export type ScopeMode = 'hard' | 'soft' | 'exploratory';
+
+export interface DomainItem {
+  id: string;
+  name: string;
+  description: string;
+  research_profile: Record<string, unknown>;
+}
+
+export interface TopicItem {
+  id: string;
+  title: string;
+  domain_id: string;
+  entity_id: string | null;
+  status: TopicStatus;
+  created_at: string;
+}
+
+export interface ChannelItem {
+  id: string;
+  name: string;
+  audience_timezone: string;
+  style_profile: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface FacetItem {
+  dimension: string;
+  value: string;
+}
+
+export interface FocusItem {
+  id: string;
+  name: string;
+  scope_mode: ScopeMode;
+  facets: FacetItem[];
+  entity_id: string | null;
+  is_active: boolean;
+}
